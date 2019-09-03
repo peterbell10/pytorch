@@ -21,7 +21,19 @@ namespace c10 {
 // An undefined tensor is one with an empty tensor type set.
 class TensorTypeSet {
 public:
-  TensorTypeSet() {}
+  enum Full { FULL };
+  enum Raw { RAW };
+
+  // NB: default constructor representation as zero is MANDATORY as
+  // use of TensorTypeSet in TLS requires this.
+  TensorTypeSet()
+    : repr_(0) {}
+  TensorTypeSet(Full)
+    : repr_(-1) {}
+  // Public version of TensorTypeSet(uint64_t) API; external users
+  // must be explicit when they do this!
+  TensorTypeSet(Raw, uint64_t x)
+    : repr_(x) {}
   explicit TensorTypeSet(TensorTypeId t)
     : repr_(t == TensorTypeId::UndefinedTensorId
               ? 0
@@ -34,6 +46,14 @@ public:
   // Perform set union
   TensorTypeSet operator|(TensorTypeSet other) const {
     return TensorTypeSet(repr_ | other.repr_);
+  }
+  // Perform set intersection
+  TensorTypeSet operator&(TensorTypeSet other) const {
+    return TensorTypeSet(repr_ & other.repr_);
+  }
+  // Compute the set difference self - other
+  TensorTypeSet operator-(TensorTypeSet other) const {
+    return TensorTypeSet(repr_ & ~other.repr_);
   }
   // Perform set equality
   bool operator==(TensorTypeSet other) const {
@@ -54,6 +74,7 @@ public:
   bool empty() const {
     return repr_ == 0;
   }
+  uint64_t raw_repr() { return repr_; }
   // Return the "first" type id in this set; i.e., the one that
   // should handle dispatch for this operator
   TensorTypeId firstTypeId() const {
@@ -75,10 +96,8 @@ C10_API std::ostream& operator<<(std::ostream&, TensorTypeSet);
 // always something like CPUTensorId and not something weird like VariableId.
 // For the forseeable future, it will still be possible to extract /that/
 // TensorTypeId, and that's what this function does.
-//
-// TODO: this will need to change when Variable drops.
 static inline TensorTypeId legacyExtractTypeId(TensorTypeSet s) {
-  return s.firstTypeId();
+  return s.remove(TensorTypeId::VariableTensorId).firstTypeId();
 }
 
 }
