@@ -7,6 +7,7 @@ namespace {
   py::object module_;
   py::object runUDFFunction_;
   py::object loadResultFunction_;
+  py::object serializeFunction_;
 } // anonymous namespace
 
 namespace PythonRpcHandler {
@@ -21,16 +22,34 @@ namespace PythonRpcHandler {
     if (loadResultFunction_ == nullptr) {
       loadResultFunction_ = module_.attr("load_python_udf_result_internal");
     }
+    if (serializeFunction_ == nullptr) {
+      serializeFunction_ = module_.attr("serialize");
+    }
   }
 
-  std::vector<char> generatePythonUDFResult(
-    const Message& request) {
+  std::vector<char> generatePythonUDFResult(const Message& message) {
     AutoGIL ag;
-    auto pargs = py::bytes(request.payload().data(), request.payload().size());
-    py::bytes pres = runUDFFunction_(pargs);
+    auto pickledPythonUDF =
+        py::bytes(message.payload().data(), message.payload().size());
+    py::bytes pres = runUDFFunction_(pickledPythonUDF);
     const auto& presStr = static_cast<std::string>(pres);
     std::vector<char> payload(presStr.begin(), presStr.end());
     return payload;
+  }
+
+  py::object runPythonUDF(const std::string& pickledPythonUDF) {
+    AutoGIL ag;
+    return runUDFFunction_(py::bytes(pickledPythonUDF), false);
+  }
+
+  std::string serialize(const py::object& obj) {
+    AutoGIL ag;
+    return static_cast<std::string>((py::bytes)serializeFunction_(obj));
+  }
+
+  py::object deserialize(const std::string& serializedObj) {
+    AutoGIL ag;
+    return loadResultFunction_(py::bytes(serializedObj));
   }
 
   py::object loadPythonUDFResult(const Message& message) {

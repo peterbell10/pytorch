@@ -1,6 +1,8 @@
 #include <torch/csrc/distributed/rpc/rref_context.h>
 #include <torch/csrc/distributed/rpc/rref.h>
 #include <torch/csrc/distributed/rpc/script_rref_proto.h>
+#include <torch/csrc/distributed/rpc/python_rpc_handler.h>
+
 
 
 namespace torch {
@@ -54,55 +56,55 @@ const RRefId& RRef::id() const {
   return rrefId_;
 }
 
-at::IValue RRef::fork() const {
+RRefForkData RRef::fork() const {
   return RRefForkData(
       ownerId_, rrefId_, RRefContext::getInstance()->genRRefId()
-  ).toIValue();
+  );
   // NB: does not support sharing RRefs between users
   // TODO: notify the owner
 }
 
 //////////////////////////  UserRRef  /////////////////////////////////////
 
-
-UserRRef::UserRRef(
+template <typename T>
+UserRRef<T>::UserRRef(
     worker_id_t ownerId, const RRefId& rrefId, const ForkId& forkId)
     : RRef(ownerId, rrefId), forkId_(forkId) {
   AT_ASSERT(!(forkId_ == rrefId_),
       "User RRef's fork ID should not be the same as its rref Id");
-  if (RRefContext::getInstance()->getWorkerId() == rrefId_.createdOn_) {
-    // creator user, notify owner.
-    auto& agent = RRefContext::getInstance()->agent();
-    agent->send(
-        agent->getWorkerId(ownerId_),
-        ScriptRRefCreate(
-            RRefForkData(ownerId_, rrefId_, forkId_).toIValue()
-        ).toMessage());
-  } else {
-    AT_ERROR("Does not support sharing RRefs between users yet");
-  }
+  // Do nothing,
+  // (1) If this UserRRef is shared from another UserRRef x, x should
+  // notified the owner on my behalf.
+  // (2) If this UserRRef is shared from the OwnerRRef, the OwnerRRef already
+  // knows this UserRRef.
+  // (3) If this the creator UserRRef, ScriptRemoteCall will properly notify
+  // the owner.
 }
 
-UserRRef::~UserRRef() {
+template <typename T>
+UserRRef<T>::~UserRRef() {
   auto& ctx = RRefContext::getInstance();
   if (ctx->getWorkerId() != ownerId_) {
     ctx->agent()->send(
         ctx->agent()->getWorkerId(ownerId_),
-        ScriptRRefDelete(
+        ScriptUserDelete(
             RRefForkData(ownerId_, rrefId_, forkId_).toIValue()
         ).toMessage());
   }
 }
 
-const ForkId& UserRRef::forkId() const {
+template <typename T>
+const ForkId& UserRRef<T>::forkId() const {
   return forkId_;
 }
 
-bool UserRRef::isOwner() const {
+template <typename T>
+bool UserRRef<T>::isOwner() const {
   return false;
 }
 
-IValue UserRRef::toHere() {
+template <>
+IValue UserRRef<IValue>::toHere() {
   auto& agent = RRefContext::getInstance()->agent();
   std::shared_ptr<FutureMessage> fm =
       agent->send(
@@ -112,6 +114,21 @@ IValue UserRRef::toHere() {
   auto srv = ScriptRRefValue::fromMessage(fm->wait());
   return srv.value();
 }
+
+template <>
+py::object UserRRef<py::object>::toHere() {
+  auto& agent = RRefContext::getInstance()->agent();
+  std::shared_ptr<FutureMessage> fm =
+      agent->send(
+          agent->getWorkerId(ownerId_),
+          PythonRRefFetch(id().toIValue()).toMessage()
+      );
+  auto srv = ScriptRRefValue::fromMessage(fm->wait());
+  return PythonRpcHandler::deserialize(srv.value().toStringRef());
+}
+
+template class UserRRef<IValue>;
+template class UserRRef<py::object>;
 
 } // namespace rpc
 } // namespace distributed
