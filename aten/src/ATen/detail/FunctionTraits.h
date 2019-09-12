@@ -32,6 +32,11 @@ template <typename ClassType, typename ReturnType, typename... Args>
 struct function_traits<ReturnType(ClassType::*)(Args...) const> : public function_traits<ReturnType(Args...)> {
 };
 
+// Function pointer
+template <typename ReturnType, typename... Args>
+struct function_traits<ReturnType(*)(Args...)>: public function_traits<ReturnType(Args...)> {
+};
+
 // Free functions
 template <typename ReturnType, typename... Args>
 struct function_traits<ReturnType(Args...)> {
