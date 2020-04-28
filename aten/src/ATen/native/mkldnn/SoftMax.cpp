@@ -1,6 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/Parallel.h>
 
 #if !AT_MKLDNN_ENABLED()
 
@@ -34,6 +35,7 @@ Tensor mkldnn_softmax(
   const int64_t wrapped_dim = maybe_wrap_dim(dim, self.dim());
   ideep::tensor& x = itensor_from_mkldnn(self);
   ideep::tensor y;
+  at::internal::lazy_init_num_threads();
   ideep::softmax_forward::compute(x, y, wrapped_dim);
   return new_with_itensor_mkldnn(std::move(y), self.options());
 }

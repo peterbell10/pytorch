@@ -1,6 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/Config.h>
+#include <ATen/Parallel.h>
 
 #if !AT_MKLDNN_ENABLED()
 
@@ -71,6 +72,7 @@ ideep::tensor _mkldnn_conv2d(
       conv_output_size(input_size, kernel_size, padding, stride, dilation);
 
   ideep::tensor y;
+  at::internal::lazy_init_num_threads();
   if (b.has_value()) {
     ideep::convolution_forward::compute(
         x,
@@ -138,6 +140,7 @@ Tensor mkldnn_convolution_backward_input(
   auto mkldnn_weight = get_mkldnn_tensor(weight);
 
   ideep::tensor mkldnn_grad_input;
+  at::internal::lazy_init_num_threads();
   ideep::convolution_backward_data::compute(
       mkldnn_grad_output,
       mkldnn_weight,
@@ -161,6 +164,7 @@ std::tuple<at::Tensor, at::Tensor> mkldnn_convolution_backward_weights(
   const ideep::tensor mkldnn_input = get_mkldnn_tensor(input);
 
   ideep::tensor mkldnn_grad_weight, mkldnn_grad_bias;
+  at::internal::lazy_init_num_threads();
   if (bias_defined) {
     ideep::convolution_backward_weights::compute(
         mkldnn_input,

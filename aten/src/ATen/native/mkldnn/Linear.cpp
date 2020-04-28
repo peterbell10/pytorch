@@ -1,6 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/Parallel.h>
 
 #if !AT_MKLDNN_ENABLED()
 
@@ -41,6 +42,7 @@ Tensor mkldnn_linear(
   const ideep::tensor w = itensor_from_mkldnn(weight);
 
   ideep::tensor y;
+  at::internal::lazy_init_num_threads();
   if (bias.defined()) {
     const ideep::tensor b = itensor_from_mkldnn(bias);
     ideep::inner_product_forward::compute(x, w, b, y);

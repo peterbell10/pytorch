@@ -2,6 +2,7 @@
 #include <ATen/Config.h>
 #include <ATen/InferSize.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/Parallel.h>
 
 #if !AT_MKLDNN_ENABLED()
 
@@ -61,6 +62,7 @@ Tensor mkldnn_clone(const Tensor& self, c10::optional<c10::MemoryFormat> optiona
       optional_memory_format.value());
   ideep::tensor& src = itensor_from_mkldnn(self);
   ideep::tensor dst;
+  at::internal::lazy_init_num_threads();
   ideep::direct_copy::compute(src, dst);
   return new_with_itensor_mkldnn(std::move(dst), self.options());
 }

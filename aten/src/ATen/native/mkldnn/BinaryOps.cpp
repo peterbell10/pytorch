@@ -1,6 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/Parallel.h>
 
 #if !AT_MKLDNN_ENABLED()
 
@@ -55,6 +56,7 @@ Tensor& mkldnn_add_out(
 
   ideep::tensor& z = itensor_from_mkldnn(result);
   const std::vector<float> scales{1.0, alpha.to<float>()};
+  at::internal::lazy_init_num_threads();
   ideep::sum::compute(scales, {x, y}, z);
 
   return result;
@@ -66,6 +68,7 @@ Tensor mkldnn_add(const Tensor& self, const Tensor& other, Scalar alpha) {
 
   ideep::tensor z;
   const std::vector<float> scales{1.0, alpha.to<float>()};
+  at::internal::lazy_init_num_threads();
   ideep::sum::compute(scales, {x, y}, z);
 
   return new_with_itensor_mkldnn(std::move(z), self.options());
@@ -80,6 +83,7 @@ Tensor& mkldnn_mul_out(Tensor& result, const Tensor& self, const Tensor& other) 
              "mkldnn_mul_out: the output size should be same as input size");
   ideep::tensor& z = itensor_from_mkldnn(result);
   ideep::tensor& x = itensor_from_mkldnn(self);
+  at::internal::lazy_init_num_threads();
 
   // for zero_dim tensor
   if (other.ndimension() == 0) {

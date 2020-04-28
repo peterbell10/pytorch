@@ -1,6 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/Parallel.h>
 #include <tuple>
 
 #if !AT_MKLDNN_ENABLED()
@@ -47,6 +48,7 @@ std::tuple<Tensor, Tensor, Tensor> mkldnn_batch_norm(
 
   ideep::tensor y;
 
+  at::internal::lazy_init_num_threads();
   if (train) {
     // TODO: support training
     AT_ERROR("mkldnn_batch_norm: mkldnn training is not supported in yet.");

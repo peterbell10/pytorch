@@ -1,6 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/Parallel.h>
 #include <ATen/native/utils/ParamUtils.h>
 #include <tuple>
 
@@ -130,6 +131,7 @@ static Tensor _mkldnn_pool2d(
   }
 
   ideep::tensor y;
+  at::internal::lazy_init_num_threads();
   ideep::pooling_forward::compute(
       x,
       {output_sizes.cbegin(), output_sizes.cend()},
