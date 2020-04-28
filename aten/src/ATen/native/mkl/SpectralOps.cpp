@@ -2,6 +2,7 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/SpectralOpsUtils.h>
 #include <ATen/Config.h>
+#include <ATen/Parallel.h>
 
 #if !AT_MKL_ENABLED()
 
@@ -150,6 +151,7 @@ Tensor _fft_mkl(const Tensor& self, int64_t signal_ndim,
                 bool inverse, IntArrayRef checked_signal_sizes,
                 bool normalized, bool onesided,
                 IntArrayRef output_sizes) {
+  at::internal::lazy_init_num_threads();
   int64_t batch = self.size(0);
   Tensor input = self;
   // real/imag dimension must aligned when viewed as of complex type

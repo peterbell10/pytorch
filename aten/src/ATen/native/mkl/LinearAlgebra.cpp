@@ -1,6 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/Config.h>
+#include <ATen/Parallel.h>
 
 #if !AT_MKL_ENABLED()
 
@@ -89,6 +90,7 @@ static inline void baddbmm_mkl_template(const Tensor& res, const Tensor& mat1, c
 
 Tensor& _baddbmm_mkl_(Tensor& self, const Tensor& batch1, const Tensor& batch2, Scalar beta, Scalar alpha) {
   // checks are done in native/LinearAlgebra.cpp
+  at::internal::lazy_init_num_threads();
   AT_DISPATCH_FLOATING_TYPES(self.scalar_type(), "baddbmm__mkl", [&] {
       baddbmm_mkl_template<scalar_t>(self, batch1, batch2, beta, alpha);
     });
