@@ -38,8 +38,12 @@ static void std_var_kernel_cuda(TensorIterator& iter, bool unbiased, bool take_s
 
 template <typename scalar_t, typename acc_t=scalar_t, typename out_t=scalar_t>
 void mean_kernel_impl(TensorIterator& iter) {
-  float factor = float(iter.num_output_elements()) / iter.numel();
-  gpu_reduce_kernel<scalar_t, out_t>(iter, MeanOps<acc_t, float> {factor});
+  // float factor = float(iter.num_output_elements()) / iter.numel();
+  gpu_reduce_kernel<scalar_t, out_t>(
+    iter,
+    MeanOps<acc_t, int64_t>{},
+    typename MeanOps<acc_t, int64_t>::acc_t{}
+  );
 }
 
 static void mean_kernel_cuda(TensorIterator& iter) {

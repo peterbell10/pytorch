@@ -133,13 +133,39 @@ static void sum_kernel_impl(TensorIterator& iter) {
       });
 }
 
+int64_t gcd(int64_t a, int64_t b) {
+  if (b > a) {
+    std::swap(a, b);
+  }
+
+  while (true) {
+    int64_t remainder = a % b;
+    if (remainder == 0) {
+      return a / b;
+    }
+    a = b;
+    b = remainder;
+  }
+}
+
+template <typename scalar_t>
+scalar_t real_divide(int64_t a, int64_t b) {
+  // Simplify with greatest common divisor first to improve float precision
+  auto divisor = gcd(a, b);
+  TORCH_WARN("GCD of ", a, " and ", b, " is ", divisor);
+  a /= divisor;
+  b /= divisor;
+
+  return static_cast<scalar_t>(static_cast<double>(a) / static_cast<double>(b));
+}
+
 static void mean_kernel_impl(TensorIterator& iter) {
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX(iter.dtype(), "mean_cpu", [&] {
-    scalar_t factor = scalar_t(iter.num_output_elements()) / scalar_t(iter.numel());
+    // auto factor = real_divide<double>(iter.num_output_elements(), iter.numel());
     binary_kernel_reduce(
       iter,
-      MeanOps<scalar_t, scalar_t> {factor},
-      scalar_t(0)
+      MeanOps<scalar_t, int64_t>{},
+      typename MeanOps<scalar_t, int64_t>::acc_t{}
     );
   });
 }

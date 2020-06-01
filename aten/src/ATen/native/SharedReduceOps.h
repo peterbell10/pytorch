@@ -122,20 +122,38 @@ struct WelfordOps {
   }
 };
 
-template <typename acc_t, typename factor_t>
-struct MeanOps {
-  factor_t factor;
 
-  inline C10_DEVICE acc_t reduce(acc_t a, acc_t b, int64_t /*idx*/) const {
-    return combine(a, b);
+template <typename scalar_t, typename index_t>
+struct MeanOps {
+
+  struct acc_t {
+    scalar_t mean = 0;
+    index_t numel = 0;
+  };
+
+  inline C10_DEVICE acc_t reduce(acc_t acc, scalar_t data, index_t /*idx*/) const {
+    scalar_t delta = data - acc.mean;
+    scalar_t new_mean = acc.mean + delta / (acc.numel + 1);
+    return { new_mean, acc.numel + 1};
   }
 
   inline C10_DEVICE acc_t combine(acc_t a, acc_t b) const {
-    return a + b;
+    if (a.numel == 0) {
+      return b;
+    }
+    if (b.numel == 0) {
+      return a;
+    }
+
+    scalar_t delta = b.mean - a.mean;
+    index_t new_numel = a.numel + b.numel;
+    scalar_t nb_over_n = static_cast<scalar_t>(b.numel) / new_numel;
+    scalar_t new_mean = a.mean + delta * nb_over_n;
+    return { new_mean, new_numel };
   }
 
-  inline C10_DEVICE acc_t project(acc_t a) const {
-    return a * factor;
+  inline C10_DEVICE scalar_t project(acc_t acc) const {
+    return acc.mean;
   }
 
   static C10_DEVICE acc_t translate_idx(acc_t acc, int64_t /*base_idx*/) {
@@ -143,13 +161,13 @@ struct MeanOps {
   }
 
 #if defined(__CUDACC__) || defined(__HIPCC__)
-  inline C10_DEVICE acc_t warp_shfl_down(acc_t data, int offset) const {
-    return WARP_SHFL_DOWN(data, offset);
+  inline __device__ acc_t warp_shfl_down(acc_t acc, int offset) const {
+    return {
+      WARP_SHFL_DOWN(acc.mean, offset),
+      WARP_SHFL_DOWN(acc.numel, offset)
+    };
   }
 #endif
-
-  MeanOps(factor_t factor): factor(factor) {
-  }
 };
 
 template <typename acc_t>
