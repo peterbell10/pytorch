@@ -148,10 +148,10 @@ static void std_var_kernel_impl(TensorIterator &iter, bool unbiased, bool take_s
 static void prod_kernel_impl(TensorIterator& iter) {
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX(iter.dtype(), "prod_cpu", [&] {
     binary_kernel_reduce_vec(
-      iter,
+      iter, simple_vec_reduce(
       [=](scalar_t a, scalar_t b) -> scalar_t { return a * b; },
       [=](Vec256<scalar_t> a, Vec256<scalar_t> b) { return a * b; },
-      /*identity=*/1);
+      /*identity=*/1));
   });
 }
 
@@ -221,7 +221,7 @@ static void norm_kernel_tensor_iterator_impl(
 
 static void and_kernel_impl(TensorIterator& iter) {
   binary_kernel_reduce_vec(
-    iter,
+    iter, simple_vec_reduce(
     [=](uint8_t a, uint8_t b) -> uint8_t { return a && b; },
     [=](Vec256<uint8_t> a, Vec256<uint8_t> b) {
       // Adding the implementation here instead of in vec256_base to avoid
@@ -240,12 +240,12 @@ static void and_kernel_impl(TensorIterator& iter) {
       }
       return c;
     },
-    /*ident=*/true);
+    /*ident=*/true));
 }
 
 static void or_kernel_impl(TensorIterator& iter) {
   binary_kernel_reduce_vec(
-    iter,
+    iter, simple_vec_reduce(
     [=](uint8_t a, uint8_t b) -> uint8_t { return a || b; },
     [=](Vec256<uint8_t> a, Vec256<uint8_t> b) {
       Vec256<uint8_t> c = Vec256<uint8_t>();
@@ -254,24 +254,24 @@ static void or_kernel_impl(TensorIterator& iter) {
       }
       return c;
     },
-    /*ident=*/false);
+    /*ident=*/false));
 }
 
 static void min_values_kernel_impl(TensorIterator& iter) {
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND(kHalf, iter.dtype(), "min_values_cpu", [&iter] {
     binary_kernel_reduce_vec(
-      iter,
+      iter, simple_vec_reduce(
       [](scalar_t a, scalar_t b) -> scalar_t { return min_impl(a, b); },
-      [](Vec256<scalar_t> a, Vec256<scalar_t> b) { return minimum(a, b); });
+      [](Vec256<scalar_t> a, Vec256<scalar_t> b) { return minimum(a, b); }));
   });
 }
 
 static void max_values_kernel_impl(TensorIterator& iter) {
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND(kHalf, iter.dtype(), "max_values_cpu", [&iter] {
     binary_kernel_reduce_vec(
-      iter,
+      iter, simple_vec_reduce(
       [](scalar_t a, scalar_t b) -> scalar_t { return max_impl(a, b); },
-      [](Vec256<scalar_t> a, Vec256<scalar_t> b) { return maximum(a, b); });
+      [](Vec256<scalar_t> a, Vec256<scalar_t> b) { return maximum(a, b); }));
   });
 }
 
