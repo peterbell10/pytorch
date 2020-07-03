@@ -39,13 +39,29 @@ void accumulate_result(char * C10_RESTRICT data, int64_t stride, int64_t index,
   *ptr = op.reduce(*ptr, value);
 }
 
-template <typename op_t, size_t numel>
+template <typename op_t, size_t numel, typename scalar_t>
 void accumulate_result(char * C10_RESTRICT data, int64_t stride, int64_t index,
-                       const std::array<typename op_t::scalar_t, numel> &values, const op_t &op) {
+                       const std::array<scalar_t, numel> &values, const op_t &op) {
   auto *base_ptr = data + stride * index;
   for (int64_t k = 0; k < numel; ++k) {
     accumulate_result(base_ptr, stride, k, values[k], op);
   }
+}
+
+template <typename op_t, typename scalar_t>
+void accumulate_result(char * C10_RESTRICT data, int64_t stride, int64_t index,
+                       const Vec256<scalar_t> &values, const op_t &op) {
+  if (C10_UNLIKELY(stride != sizeof(scalar_t))) {
+    // Slow path, if out stride not contiguous split vector into an array
+    std::array<scalar_t, values.size()> arr;
+    values.store(arr.data());
+    accumulate_result(data, stride, index, arr, op);
+    return;
+  }
+
+  auto *base_ptr = data + stride * index;
+  auto v = Vec256<scalar_t>::loadu(base_ptr);
+  op.reduce(v, values).store(base_ptr);
 }
 
 template <typename F>
@@ -138,20 +154,14 @@ inline void vectorized_outer_reduction(
 
     for (int64_t i = 0; i < nrows; ++i) {
       const int64_t base_idx = j + i * vec_t::size();
-
-      std::array<scalar_t, vec_t::size()> ans;
-      res[i].store(ans.data());
-      accumulate_result(data[0], out_stride, base_idx, ans, op);
+      accumulate_result(data[0], out_stride, base_idx, res[i], op);
     }
   }
 
   for (; j + vec_t::size() <= size1; j += vec_t::size()) {
     const auto *row_in = data[1] + j * sizeof(scalar_t);
     const vec_t res = row_reduce<vec_t>(row_in, inner_stride, size0, op);
-
-    std::array<scalar_t, vec_t::size()> ans;
-    res.store(ans.data());
-    accumulate_result(data[0], out_stride, j, ans, op);
+    accumulate_result(data[0], out_stride, j, res, op);
   }
 
   for (; j < size1; ++j) {
