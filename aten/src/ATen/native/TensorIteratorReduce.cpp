@@ -72,9 +72,7 @@ static int find_split_dim(TensorIterator& iter) {
   // start with the outer-most dimension
   int best_dim = iter.ndim() - 1;
   for (int dim = best_dim; dim >= 0 && !iter.is_dim_reduced(dim); dim--) {
-    if (shape[dim] >= num_threads) {
-      return dim;
-    } else if (shape[dim] > shape[best_dim]) {
+    if (shape[dim] > shape[best_dim]) {
       best_dim = dim;
     }
   }
@@ -83,32 +81,19 @@ static int find_split_dim(TensorIterator& iter) {
   return best_dim;
 }
 
-static std::tuple<int64_t, int64_t>
-round_columns(TensorIterator& iter, int dim, int multiple, int64_t begin, int64_t end) {
-  begin = begin - (begin % multiple);
-  if (end != iter.shape()[dim]) {
-    // only round the 'end' column down if it's not the final column
-    end = end - (end % multiple);
-  }
-  return std::make_tuple(begin, end);
-}
-
 static void parallel_dim_reduction(TensorIterator& iter, loop2d_t loop) {
   AT_ASSERT(iter.ndim() >= 1);
   int dim = find_split_dim(iter);
-  int64_t cols = iter.shape()[dim];
-  int element_size = iter.element_size(/*arg=*/1);
+  const int64_t cols = iter.shape()[dim];
+  const int element_size = iter.element_size(/*arg=*/1);
+  const bool should_round_columns = iter.strides(1)[dim] == element_size;
+  const int64_t cols_per_vec256 = (32 / element_size);
 
-  bool should_round_columns = iter.strides(1)[dim] == element_size;
-  at::parallel_for(0, cols, 1, [&](int64_t begin, int64_t end) {
+  const auto n = should_round_columns ? divup(cols, cols_per_vec256) : cols;
+  at::parallel_for(0, n, 1, [&](int64_t begin, int64_t end) {
     if (should_round_columns) {
-      // round columns to multiples of 128 bytes if adjacent columns are
-      // contiguous in memory.
-      int64_t cols_per_128_bytes = 128 / element_size;
-      std::tie(begin, end) = round_columns(iter, dim, cols_per_128_bytes, begin, end);
-    }
-    if (begin == end) {
-      return;
+      begin *= cols_per_vec256;
+      end = std::min(cols, end * cols_per_vec256);
     }
     auto sub_iter = TensorIterator(iter);
     sub_iter.narrow(dim, begin, end - begin);
