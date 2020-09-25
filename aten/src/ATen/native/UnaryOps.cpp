@@ -662,3 +662,11 @@ DEFINE_DISPATCH(lgamma_stub);
 
 } // namespace native
 } // namespace at
+
+namespace at{ namespace native {
+
+Tensor mul10(const Tensor& self) {
+  return at::mul(self, 10);
+}
+
+}} // namespace at::native
