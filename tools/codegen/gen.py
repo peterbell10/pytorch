@@ -137,6 +137,9 @@ def cpp_string(s: str) -> str:
     s = s.replace('\t', '\\t')
     return f'"{s}"'
 
+def value_or(first : Optional[T], second : T) -> T:
+    return first if first is not None else second
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 #
 #                        C++ CODE GENERATION
@@ -325,9 +328,7 @@ def exprs_str(signature: CppSignature,
               process_tensoroptions: dispatcher.ProcessTensoroptions = dispatcher.ProcessTensoroptions.PASS_THROUGH,
               exclude_this: bool = False,
               ) -> str:
-    args = signature.cpp_arguments()
-    if exclude_this:
-        args = [a for a in args if not isinstance(a.argument, ThisArgument)]
+    args = signature.cpp_arguments(exclude_this=exclude_this)
     exprs = dispatcher.cpparguments_exprs(args, process_tensoroptions=process_tensoroptions)
     return ', '.join(map(lambda a: a.expr, exprs))
 
@@ -336,10 +337,37 @@ def types_str(signature: CppSignature) -> str:
     exprs = dispatcher.cpparguments_exprs(args, process_tensoroptions=dispatcher.ProcessTensoroptions.PASS_THROUGH)
     return ', '.join(map(lambda a: a.type, exprs))
 
+ArgT = TypeVar('ArgT', CppArgument, LegacyDispatcherArgument)
+
+# Resolve any overload ambiguities introduced by default values
+# Always prefers the overload declared first, since this will be picked by
+# the PythonArgParser as well
+def unambiguous_defaults(
+        name: str, args: Sequence[ArgT],
+        seen_functions: Dict[str, List[Sequence[ArgT]]]) -> List[bool]:
+    overloads: List[Sequence[ArgT]] = seen_functions.get(name, [])
+    n = 0
+    for o_args in overloads:
+        for i, (a, b) in enumerate(zip(args, o_args)):
+            if b.default is not None:
+                n = max(n, i + 1)
+            if a.type != b.type:
+                break
+        else:
+            if len(o_args) < len(args):
+                n = max(n, len(o_args) + 1)
+
+    overloads.append(args)
+    seen_functions[name] = overloads
+    return [False] * n + [True] * (len(args) - n)
+
 # Generates Function.cpp and Function.h.  These files provide the
 # functional public C++ API, and the scaffolding to call into
-# the dispatcher from these functions.  See also compute_tensor_method.
-def compute_function(*, target: Target) -> Callable[[NativeFunction], Optional[str]]:
+# the dispatcher from these functions.  See also compute_tensor_methods.
+def compute_functions(native_functions: List[NativeFunction], *, target: Target) -> List[str]:
+    # Map function name to a list of its overloads C++ arguments
+    seen_functions: Dict[str, List[Sequence[CppArgument]]] = {}
+
     @with_native_function
     def go(f: NativeFunction) -> Optional[str]:
         if f.manual_kernel_registration:
@@ -352,21 +380,26 @@ def compute_function(*, target: Target) -> Callable[[NativeFunction], Optional[s
         signature_group = cpp.signature_group(f.func, method=False)
 
         if target is Target.DECLARATION:
-            if signature_group.gathered_signature is None:
-                # There's no TensorOptions
-                return f"""
-CAFFE2_API {cpp_returns_type} {cpp_name}({signature_group.signature.cpp_arguments_str(with_defaults=True)});
+            primary_signature = value_or(signature_group.gathered_signature, signature_group.signature)
+            cpp_args = primary_signature.cpp_arguments()
+            use_defaults = unambiguous_defaults(cpp_name, cpp_args, seen_functions)
+            cpp_args_str = ', '.join(
+                str(arg) if use_def else arg.str_no_default()
+                for use_def, arg in zip(use_defaults, cpp_args))
+
+            str_signatures = f"""
+CAFFE2_API {cpp_returns_type} {cpp_name}({cpp_args_str});
 """
-            else:
-                # There's TensorOptions in the API. Create 2 APIs - one taking the TensorOptions object ("gathered_signature"),
-                # and one taking a scattered signature with ScalarType, Layout, Device separately ("signature").
-                # The gathered_signature already exists in several older PyTorch versions and had default arguments.
-                # For backward compatibility, we left it unchanged and added the scattered API on top of it.
-                # Note that the scattered API cannot have default arguments or calls will be ambigious.
-                return f"""
-CAFFE2_API {cpp_returns_type} {cpp_name}({signature_group.gathered_signature.cpp_arguments_str(with_defaults=True)});
-CAFFE2_API {cpp_returns_type} {cpp_name}({signature_group.signature.cpp_arguments_str(with_defaults=False)});
-"""
+
+            # If there's TensorOptions in the API. Create 2 APIs - one taking the TensorOptions object ("gathered_signature"),
+            # and one taking a scattered signature with ScalarType, Layout, Device separately ("signature").
+            # The gathered_signature already exists in several older PyTorch versions and had default arguments.
+            # For backward compatibility, we left it unchanged and added the scattered API on top of it.
+            # Note that the scattered API cannot have default arguments or calls will be ambigious.
+            if signature_group.gathered_signature is not None:
+                str_signatures += f"CAFFE2_API {cpp_returns_type} {cpp_name}({signature_group.signature.cpp_arguments_str(with_defaults=False)});\n"
+
+            return str_signatures
 
         assert target is Target.DEFINITION
 
@@ -414,12 +447,15 @@ CAFFE2_API {cpp_returns_type} {cpp_name}({signature_group.signature.cpp_argument
 }}
 """
 
-    return go
+    return list(mapMaybe(go, native_functions))
 
 # Generates TensorBody.h (sic) and TensorMethods.cpp.  These files provide the
 # object-oriented (method-based) public C++ API, and the scaffolding to call into
-# the dispatcher from these functions.  See also compute_function.
-def compute_tensor_method(*, target: Target) -> Callable[[NativeFunction], Optional[str]]:
+# the dispatcher from these functions.  See also compute_functions.
+def compute_tensor_methods(native_functions: List[NativeFunction], *, target: Target) -> List[str]:
+    # Map function name to list of functions and their C++ arguments
+    seen_functions: Dict[str, List[Sequence[CppArgument]]] = {}
+
     @with_native_function
     def go(f: NativeFunction) -> Optional[str]:
         if Variant.method not in f.variants:
@@ -434,19 +470,26 @@ def compute_tensor_method(*, target: Target) -> Callable[[NativeFunction], Optio
         signature_group = cpp.signature_group(f.func, method=True)
 
         if target is Target.DECLARATION:
-            if signature_group.gathered_signature is None:
-                # There's no TensorOptions. Just create the API without concern for TensorOptions.
-                return f"{cpp_returns_type} {cpp_name}({signature_group.signature.cpp_arguments_str(with_defaults=True)}) const;"
-            else:
-                # There's TensorOptions in the API. Create 2 APIs - one taking the TensorOptions object ("gathered_signature"),
-                # and one taking a scattered signature with ScalarType, Layout, Device separately ("signature").
-                # The gathered_signature already exists in several older PyTorch versions and had default arguments.
-                # For backward compatibility, we left it unchanged and added the scattered API on top of it.
-                # Note that the scattered API cannot have default arguments or calls will be ambigious.
-                return f"""
-{cpp_returns_type} {cpp_name}({signature_group.gathered_signature.cpp_arguments_str(with_defaults=True)}) const;
-{cpp_returns_type} {cpp_name}({signature_group.signature.cpp_arguments_str(with_defaults=False)}) const;
+            primary_signature = value_or(signature_group.gathered_signature, signature_group.signature)
+            cpp_args = primary_signature.cpp_arguments(exclude_this=True)
+            use_defaults = unambiguous_defaults(cpp_name, cpp_args, seen_functions)
+            cpp_args_str = ', '.join(
+                str(arg) if use_def else arg.str_no_default()
+                for use_def, arg in zip(use_defaults, cpp_args))
+
+            str_signatures = f"""
+{cpp_returns_type} {cpp_name}({cpp_args_str}) const;
 """
+
+            # If there's TensorOptions in the API. Create 2 APIs - one taking the TensorOptions object ("gathered_signature"),
+            # and one taking a scattered signature with ScalarType, Layout, Device separately ("signature").
+            # The gathered_signature already exists in several older PyTorch versions and had default arguments.
+            # For backward compatibility, we left it unchanged and added the scattered API on top of it.
+            # Note that the scattered API cannot have default arguments or calls will be ambigious.
+            if signature_group.gathered_signature is not None:
+                str_signatures += f"{cpp_returns_type} {cpp_name}({signature_group.signature.cpp_arguments_str(with_defaults=False)}) const;\n"
+
+            return str_signatures
 
         assert target is Target.DEFINITION
 
@@ -504,7 +547,7 @@ def compute_tensor_method(*, target: Target) -> Callable[[NativeFunction], Optio
 }}
 """
 
-    return go
+    return list(mapMaybe(go, native_functions))
 
 # Generates ATenOpList.cpp, a runtime accessible list of all aten
 # operators.
@@ -517,28 +560,39 @@ def compute_aten_op(f: NativeFunction) -> str:
 
 # Generates NativeFunctions.h, a list of forward declarations of all
 # actual kernel definitions we keep in aten/src/ATen/native/
-@with_native_function
-def compute_native_function_declaration(f: NativeFunction) -> List[str]:
-    if f.dispatch is None:
-        ns = [cpp.name(f.func)]
-    else:
-        ns = list(f.dispatch.values())
+def compute_native_function_declarations(native_functions: List[NativeFunction]) -> List[str]:
+    # Map function name to a list of its overloads C++ arguments
+    seen_functions: Dict[str, List[Sequence[LegacyDispatcherArgument]]] = {}
 
-    rs = []
-    # Sometimes a function name shows up multiple times; only generate
-    # it once!
-    seen = set()
-    for n in ns:
-        if n in seen:
-            continue
-        if "legacy::" in n:
-            continue
-        seen.add(n)
-        returns_type = legacy_dispatcher.returns_type(f.func.returns)
-        args = legacy_dispatcher.arguments(f.func)
-        rs.append(f"CAFFE2_API {returns_type} {n}({', '.join(map(lambda a: a.str_with_default(), args))});")
+    @with_native_function
+    def go(f: NativeFunction) -> List[str]:
+        if f.dispatch is None:
+            ns = [cpp.name(f.func)]
+        else:
+            ns = list(f.dispatch.values())
 
-    return rs
+        rs = []
+        # Sometimes a function name shows up multiple times; only generate
+        # it once!
+        seen = set()
+        for n in ns:
+            if n in seen:
+                continue
+            if "legacy::" in n:
+                continue
+            seen.add(n)
+            returns_type = legacy_dispatcher.returns_type(f.func.returns)
+            args = legacy_dispatcher.arguments(f.func)
+
+            use_defaults = unambiguous_defaults(n, args, seen_functions)
+            args_str = ', '.join(
+                arg.str_with_default() if use_def else str(arg)
+                for use_def, arg in zip(use_defaults, args))
+            rs.append(f"CAFFE2_API {returns_type} {n}({args_str});")
+
+        return rs
+
+    return list(concatMap(go, native_functions))
 
 # Generates BackendSelectRegister.cpp, a series of kernels which provide
 # specialized computation of dispatch key for operator signatures which cannot
@@ -1126,22 +1180,22 @@ def main() -> None:
             native_functions)),
     })
     cpu_fm.write('Functions.h', lambda: {
-        'function_declarations': list(mapMaybe(compute_function(target=Target.DECLARATION), native_functions)),
+        'function_declarations': compute_functions(native_functions, target=Target.DECLARATION),
     })
     cpu_fm.write('Functions.cpp', lambda: {
-        'function_definitions': list(mapMaybe(compute_function(target=Target.DEFINITION), native_functions)),
+        'function_definitions': compute_functions(native_functions, target=Target.DEFINITION),
     })
     core_fm.write('TensorBody.h', lambda: {
-        'tensor_method_declarations': list(mapMaybe(compute_tensor_method(target=Target.DECLARATION), native_functions)),
+        'tensor_method_declarations': compute_tensor_methods(native_functions, target=Target.DECLARATION),
     })
     core_fm.write('TensorMethods.cpp', lambda: {
-        'tensor_method_definitions': list(mapMaybe(compute_tensor_method(target=Target.DEFINITION), native_functions)),
+        'tensor_method_definitions': compute_tensor_methods(native_functions, target=Target.DEFINITION),
     })
     core_fm.write('ATenOpList.cpp', lambda: {
         'aten_ops': list(mapMaybe(compute_aten_op, native_functions)),
     })
     cpu_fm.write('NativeFunctions.h', lambda: {
-        'native_function_declarations': list(concatMap(compute_native_function_declaration, native_functions)),
+        'native_function_declarations': compute_native_function_declarations(native_functions),
     })
     cpu_fm.write('BackendSelectRegister.cpp', lambda: {
         'backend_select_method_definitions':

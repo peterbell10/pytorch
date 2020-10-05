@@ -219,13 +219,16 @@ class CppSignature:
     returns: Tuple[Return, ...]
     arguments: Tuple[Union[Argument, TensorOptionsArguments, ThisArgument], ...]
 
-    def cpp_arguments(self) -> Sequence[CppArgument]:
-        return list(map(argument, self.arguments))
+    def cpp_arguments(self, exclude_this: bool = False) -> Sequence[CppArgument]:
+        if exclude_this:
+            return [argument(a) for a in self.arguments if not isinstance(a, ThisArgument)]
+        else:
+            return list(map(argument, self.arguments))
 
     # Return arguments as a comma separated list, i.e. like they would be in a C++
     # function signature. Include default values for arguments.
     def cpp_arguments_str(self, with_defaults: bool) -> str:
-        args_without_this = [argument(a) for a in self.arguments if not isinstance(a, ThisArgument)]
+        args_without_this = self.cpp_arguments(exclude_this=True)
         if with_defaults:
             return ', '.join(map(str, args_without_this))
         else:
