@@ -435,7 +435,8 @@ class DispatchLambdaArgumentExprs:
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 
 def _cpp_signature(f: NativeFunction, *, method: bool = False) -> CppSignature:
-    return CppSignatureGroup.from_schema(f.func, method=method).signature
+    return CppSignatureGroup.from_schema(
+        f.func, method=method, cpp_no_default_args=f.cpp_no_default_args).signature
 
 def has_tensor_options(f: NativeFunction) -> bool:
     return any(filter(lambda a: isinstance(a, TensorOptionsArguments),

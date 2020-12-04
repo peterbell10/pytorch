@@ -225,7 +225,8 @@ def load_deprecated_signatures(
         opname = str(f.func.name.name.base)
         if f.func.is_out_fn():
             opname += '_out'
-        args = CppSignatureGroup.from_schema(f.func, method=False).signature.arguments()
+        args = CppSignatureGroup.from_schema(
+            f.func, method=False, cpp_no_default_args=f.cpp_no_default_args).signature.arguments()
         # Simply ignore TensorOptionsArguments as it does not exist in deprecated.yaml.
         types = ', '.join(argument_type_str(a.argument.type)
                           for a in args if isinstance(a.argument, Argument))

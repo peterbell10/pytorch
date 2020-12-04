@@ -125,6 +125,10 @@ class NativeFunction:
     # in terms of the out kernel referenced by the string here.
     structured_delegate: Optional['OperatorName']
 
+    # Argument names whose default  should be excluded from the C++ interface.
+    # Intended for resolving overload ambiguities between signatures.
+    cpp_no_default_args: Set[str]
+
     # Note [Abstract ATen methods]
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # An abstract ATen method is one whose dispatch differs between
@@ -156,6 +160,10 @@ class NativeFunction:
         funcs = e.pop('func')
         assert isinstance(funcs, str), f'not a str: {funcs}'
         func = FunctionSchema.parse(funcs)
+
+        cpp_no_default_args_list = e.pop('cpp_no_default_args', [])
+        assert isinstance(cpp_no_default_args_list, list)
+        cpp_no_default_args = set(cpp_no_default_args_list)
 
         use_c10_dispatcher_s = e.pop('use_c10_dispatcher', None)
         if use_c10_dispatcher_s is None:
@@ -235,6 +243,7 @@ class NativeFunction:
             dispatch=dispatch,
             device_guard=device_guard,
             loc=loc,
+            cpp_no_default_args=cpp_no_default_args,
         )
 
     def validate_unstructured(self) -> None:
@@ -268,6 +277,11 @@ class NativeFunction:
         # happen
         assert not (self.structured and self.structured_delegate), \
             "Cannot have both structured and structured_delegate on function"
+
+        defaulted_arguments = {a.name for a in self.func.schema_order_arguments()
+                               if a.default is not None}
+        invalid_args = set.difference(self.cpp_no_default_args, defaulted_arguments)
+        assert len(invalid_args) == 0, f'Invalid cpp_no_default_args: {invalid_args}'
 
 SchemaKind = Enum('SchemaKind', ('functional', 'inplace', 'out'))
 
@@ -929,7 +943,8 @@ class Arguments:
 
 
     @staticmethod
-    def _preparse(args: str) -> Tuple[List[Argument], List[Argument], List[Argument]]:
+    def _preparse(args: str) -> Tuple[
+            List[Argument], List[Argument], List[Argument]]:
         positional: List[Argument] = []
         kwarg_only: List[Argument] = []
         out: List[Argument] = []

@@ -929,7 +929,8 @@ def get_decl_signature(declaration: Dict[Any, Any], use_base_variant: bool = Fal
 
 @with_native_function
 def get_func_signature(f: NativeFunction) -> str:
-    args = CppSignatureGroup.from_schema(f.func, method=False).signature.arguments()
+    args = CppSignatureGroup.from_schema(
+        f.func, method=False, cpp_no_default_args=f.cpp_no_default_args).signature.arguments()
     types = ', '.join(python.argument_type_str(a.argument.type, simple_type=True)
                       if isinstance(a.argument, Argument) else 'TensorOptions'
                       for a in args)

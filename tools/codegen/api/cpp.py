@@ -1,7 +1,7 @@
 from tools.codegen.model import *
 from tools.codegen.api.types import *
 import tools.codegen.local as local
-from typing import Optional, Sequence, Union, List
+from typing import Optional, Sequence, Union, List, Set
 
 # This file describes the translation of JIT schema to the public C++
 # API, which is what people use when they call functions like at::add.
@@ -227,17 +227,23 @@ def default_expr(d: str, t: Type) -> str:
 
 def argument_not_this(
     a: Union[Argument, TensorOptionsArguments],
+    cpp_no_default_args: Set[str],
 ) -> CppArgument:
     if isinstance(a, Argument):
         return CppArgument(
             type=argument_type(a),
             name=a.name,
-            default=default_expr(a.default, a.type) if a.default is not None else None,
+            default=(default_expr(a.default, a.type)
+                     if a.default is not None and a.name not in cpp_no_default_args else None),
             argument=a,
         )
     elif isinstance(a, TensorOptionsArguments):
         default = None
-        if all(x.default == "None" for x in a.all()):
+        if any(x.name in cpp_no_default_args for x in a.all()):
+            assert all(x.name in cpp_no_default_args for x in a.all()), \
+                "cpp_no_default_args cannot be applied to only a subset of TensorOptions arguments"
+            default = None
+        elif all(x.default == "None" for x in a.all()):
             default = '{}'
         elif a.dtype.default == "long":
             default = 'at::kLong'  # TODO: this is wrong
@@ -252,25 +258,27 @@ def argument_not_this(
 
 def argument(
     a: Union[Argument, TensorOptionsArguments, SelfArgument],
+        cpp_no_default_args: Set[str],
 ) -> Union[CppSingleArgumentPack, CppThisArgumentPack]:
     if isinstance(a, SelfArgument):
         return CppThisArgumentPack(argument=a, type=argument_type(a.argument))
     else:
-        return CppSingleArgumentPack(argument_not_this(a))
+        return CppSingleArgumentPack(argument_not_this(a, cpp_no_default_args))
 
 def argument_faithful(
     a: Union[Argument, TensorOptionsArguments, SelfArgument],
+    cpp_no_default_args: Set[str],
 ) -> CppArgumentPack:
     if isinstance(a, TensorOptionsArguments):
         return CppTensorOptionsArgumentPack(
             argument=a,
-            dtype=argument_not_this(a.dtype),
-            layout=argument_not_this(a.layout),
-            device=argument_not_this(a.device),
-            pin_memory=argument_not_this(a.pin_memory),
+            dtype=argument_not_this(a.dtype, cpp_no_default_args),
+            layout=argument_not_this(a.layout, cpp_no_default_args),
+            device=argument_not_this(a.device, cpp_no_default_args),
+            pin_memory=argument_not_this(a.pin_memory, cpp_no_default_args),
         )
     else:
-        return argument(a)
+        return argument(a, cpp_no_default_args)
 
 def group_arguments(
     func: FunctionSchema, *, method: bool

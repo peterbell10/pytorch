@@ -190,7 +190,8 @@ class CppSignature:
         func: FunctionSchema,
         arguments: Sequence[Union[Argument, TensorOptionsArguments, SelfArgument]],
         *,
-        faithful: bool
+        faithful: bool,
+        cpp_no_default_args: Set[str]
     ) -> 'CppSignature':
         if faithful:
             # Faithful signatures will ungroup arguments into argument
@@ -201,11 +202,11 @@ class CppSignature:
             # principle, we should be able to do this at some later
             # point in time with other overload disambiguation
             argument_packs = tuple(
-                cpp.argument_faithful(a).no_default() for a in arguments
+                cpp.argument_faithful(a, cpp_no_default_args).no_default() for a in arguments
             )
         else:
             argument_packs = tuple(
-                cpp.argument(a) for a in arguments
+                cpp.argument(a, cpp_no_default_args) for a in arguments
             )
         return CppSignature(
             func=func,
@@ -224,14 +225,16 @@ class CppSignatureGroup:
     faithful_signature: Optional[CppSignature]
 
     @staticmethod
-    def from_schema(func: FunctionSchema, *, method: bool) -> 'CppSignatureGroup':
+    def from_schema(func: FunctionSchema, *, method: bool, cpp_no_default_args: Set[str]) -> 'CppSignatureGroup':
         grouped_arguments = cpp.group_arguments(func, method=method)
         faithful_signature: Optional[CppSignature]
         if any(isinstance(a, TensorOptionsArguments) for a in grouped_arguments):
-            faithful_signature = CppSignature._from_grouped_arguments(func, grouped_arguments, faithful=True)
+            faithful_signature = CppSignature._from_grouped_arguments(func, grouped_arguments, faithful=True,
+                                                                      cpp_no_default_args=cpp_no_default_args)
         else:
             faithful_signature = None
-        signature = CppSignature._from_grouped_arguments(func, grouped_arguments, faithful=False)
+        signature = CppSignature._from_grouped_arguments(func, grouped_arguments, faithful=False,
+                                                         cpp_no_default_args=cpp_no_default_args)
         return CppSignatureGroup(
             func=func,
             signature=signature,
