@@ -73,6 +73,12 @@ allow_list = [
     ("aten::_foreach_div_", datetime.date(2021, 2, 25)),
     ("aten::_foreach_addcdiv", datetime.date(2021, 2, 25)),
     ("aten::mkldnn_linear", datetime.date(2021, 3, 2)),
+    ("aten::_var", datetime.date(2021, 2, 28)),
+    ("aten::_std", datetime.date(2021, 2, 28)),
+    ("aten::var", datetime.date(2021, 2, 28)),
+    ("aten::std", datetime.date(2021, 2, 28)),
+    ("aten::var_mean", datetime.date(2021, 2, 28)),
+    ("aten::std_mean", datetime.date(2021, 2, 28)),
 ]
 
 def allow_listed(schema, allow_list):
