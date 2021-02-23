@@ -1244,13 +1244,22 @@ def sample_inputs_clamp(op_info, device, dtype, requires_grad):
         make_tensor((S, M, S), device, dtype, low=None, high=None, requires_grad=requires_grad),
         make_tensor((S, M, S), device, dtype, low=None, high=None, requires_grad=requires_grad),
         make_tensor((S, M, S), device, dtype, low=None, high=None, requires_grad=requires_grad),
-        make_tensor((S, M, 1), device, dtype, low=None, high=None, requires_grad=requires_grad),
-        make_tensor((S, 1, S), device, dtype, low=None, high=None, requires_grad=requires_grad),
     )
+
+    requires_grad = tensors[0].requires_grad
+    lb = torch.empty((S, M, S), device=device, dtype=dtype, requires_grad=requires_grad)
+    ub = torch.empty((S, M, S), device=device, dtype=dtype, requires_grad=requires_grad)
+    with torch.no_grad():
+        lb[:] = tensors[1].min(tensors[2])
+        ub[:] = tensors[1].max(tensors[2])
+
+    def detach(tensor):
+        return tensor.clone().detach_().requires_grad_(requires_grad)
+
     return [
-        SampleInput((tensors[0], tensors[1], tensors[2])),
-        SampleInput((tensors[0], tensors[3], tensors[4])),
-        SampleInput((tensors[1], tensors[3])),
+        SampleInput((tensors[0], lb, ub)),
+        SampleInput((tensors[0], detach(lb[0]), detach(ub[0]))),
+        SampleInput((tensors[0], detach(lb[:, :1]))),
     ]
 
 def sample_inputs_clamp_scalar(op_info, device, dtype, requires_grad):
@@ -1625,7 +1634,6 @@ op_db: List[OpInfo] = [
                                   dtypes=[torch.complex64, torch.complex128]),)),
     OpInfo('clamp',
            aliases=('clip',),
-           ref=np.clip,
            dtypes=all_types_and(torch.half, torch.bfloat16),
            dtypesIfCPU=all_types_and(torch.bfloat16),
            dtypesIfCUDA=all_types_and(torch.half, torch.bfloat16),

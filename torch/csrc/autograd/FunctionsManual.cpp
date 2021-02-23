@@ -616,14 +616,14 @@ Tensor clamp_backward(const Tensor & grad, const Tensor &self, const optional<Sc
   }
 }
 
-Tensor clamp_backward(const Tensor & grad, const Tensor &self, const optional<Tensor> & min, const optional<Tensor> & max) {
+Tensor clamp_backward(const Tensor & grad, const Tensor &self, const Tensor& min, const Tensor& max) {
   // clamp: gradients not defined on min and max, so we return the subgradient 1 for these cases.
-  if (max && min) {
-    return grad * ((self >= *min) * (self <= *max)).type_as(grad);
-  } else if (min) {
-    return grad * (self >= *min).type_as(grad);
-  } else if (max) {
-    return grad * (self <= *max).type_as(grad);
+  if (max.defined() && min.defined()) {
+    return grad * ((self >= min) * (self <= max)).type_as(grad);
+  } else if (min.defined()) {
+    return grad * (self >= min).type_as(grad);
+  } else if (max.defined()) {
+    return grad * (self <= max).type_as(grad);
   } else {
     return grad;
   }
