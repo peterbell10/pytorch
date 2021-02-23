@@ -16,6 +16,9 @@ DEFINE_DISPATCH(min_stub);
 DEFINE_DISPATCH(_aminmax_stub);
 DEFINE_DISPATCH(isposinf_stub);
 DEFINE_DISPATCH(isneginf_stub);
+DEFINE_DISPATCH(clamp_stub);
+DEFINE_DISPATCH(clamp_min_stub);
+DEFINE_DISPATCH(clamp_max_stub);
 
 bool allclose(const Tensor& self, const Tensor& other, double rtol, double atol, bool equal_nan) {
   return at::isclose(self, other, rtol, atol, equal_nan).all().item<uint8_t>();
@@ -441,6 +444,150 @@ std::tuple<Tensor&,Tensor&> min_out(Tensor& min, Tensor& min_indices,
   return result;
 }
 
+static Tensor scalar_tensor_like(const Tensor& like, const Scalar& value) {
+  // FIXME: This should do type promotion with value, but that would be a BC-break
+  return at::scalar_tensor(value, at::device(like.device()).dtype(like.scalar_type()));
+}
+
+static c10::optional<Tensor> scalar_tensor_like(const Tensor& like, const c10::optional<Scalar>& value) {
+  if (value) {
+    return scalar_tensor_like(like, *value);
+  }
+  return c10::nullopt;
+}
+
+Tensor& clamp_out(const Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max, Tensor& result) {
+  return at::clamp_outf(self, scalar_tensor_like(self, min), scalar_tensor_like(self, max), result);
+}
+
+Tensor& clamp_out(const Tensor& self, const c10::optional<Tensor>& min,
+                  const c10::optional<Tensor>& max, Tensor& result) {
+  if (min && max) {
+    TORCH_CHECK(self.layout() == Layout::Strided,
+                "clamp only supports strided layout, got: ", self.layout());
+    auto iter = TensorIteratorConfig()
+                .set_check_mem_overlap(true)
+                .add_output(result)
+                .add_input(self)
+                .add_input(*min)
+                .add_input(*max)
+                .promote_inputs_to_common_dtype(true)
+                .cast_common_dtype_to_outputs(true)
+                .enforce_safe_casting_to_output(true)
+                .build();
+    clamp_stub(iter.device_type(), iter);
+  } else if (max) {
+    at::clamp_max_outf(self, *max, result);
+  } else if (min) {
+    at::clamp_min_outf(self, *min, result);
+  } else {
+    TORCH_CHECK(false, "At least one of 'min' or 'max' must not be None");
+  }
+  return result;
+}
+
+Tensor clamp(const Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max) {
+  Tensor result = at::empty({0}, self.options());
+  return at::clamp_outf(self, min, max, result);
+}
+
+Tensor clamp(const Tensor& self, const c10::optional<Tensor>& min, const c10::optional<Tensor>& max) {
+  Tensor result = at::empty({0}, self.options());
+  return at::clamp_outf(self, min, max, result);
+}
+
+Tensor& clamp_(Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max) {
+  return at::clamp_outf(self, min, max, self);
+}
+
+Tensor& clamp_(Tensor& self, const c10::optional<Tensor>& min, const c10::optional<Tensor>& max) {
+  return at::clamp_outf(self, min, max, self);
+}
+
+Tensor& clamp_max_out(const Tensor& self, Scalar max, Tensor& result) {
+  return at::clamp_max_outf(self, scalar_tensor_like(self, max), result);
+}
+
+Tensor& clamp_max_out(const Tensor& self, const Tensor& max, Tensor& result) {
+  TORCH_CHECK(self.layout() == Layout::Strided,
+              "clamp_max only supports strided layout, got: ", self.layout());
+  auto iter = TensorIterator::binary_op(result, self, max);
+  clamp_max_stub(iter.device_type(), iter);
+  return result;
+}
+
+Tensor clamp_max(const Tensor& self, Scalar max) {
+  Tensor result = at::empty({0}, self.options());
+  return at::clamp_max_outf(self, max, result);
+}
+
+Tensor clamp_max(const Tensor& self, const Tensor& max) {
+  Tensor result = at::empty({0}, self.options());
+  return at::clamp_max_outf(self, max, result);
+}
+
+Tensor& clamp_max_(Tensor& self, Scalar max) {
+  return at::clamp_max_outf(self, max, self);
+}
+
+Tensor& clamp_max_(Tensor& self, const Tensor& max) {
+  return at::clamp_max_outf(self, max, self);
+}
+
+Tensor& clamp_min_out(const Tensor& self, Scalar min, Tensor& result) {
+  return at::clamp_min_outf(self, scalar_tensor_like(self, min), result);
+}
+
+Tensor& clamp_min_out(const Tensor& self, const Tensor& min, Tensor& result) {
+  TORCH_CHECK(self.layout() == Layout::Strided,
+              "clamp_min only supports strided layout, got: ", self.layout());
+  auto iter = TensorIterator::binary_op(result, self, min);
+  clamp_min_stub(iter.device_type(), iter);
+  return result;
+}
+
+Tensor clamp_min(const Tensor& self, Scalar min) {
+  Tensor result = at::empty({0}, self.options());
+  return at::clamp_min_outf(self, min, result);
+}
+
+Tensor clamp_min(const Tensor& self, const Tensor& min) {
+  Tensor result = at::empty({0}, self.options());
+  return at::clamp_min_outf(self, min, result);
+}
+
+Tensor& clamp_min_(Tensor& self, Scalar min) {
+  return at::clamp_min_outf(self, min, self);
+}
+
+Tensor& clamp_min_(Tensor& self, const Tensor& min) {
+  return at::clamp_min_outf(self, min, self);
+}
+
+// Implements the "clip" alias for clamp
+Tensor& clip_out(const Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max, Tensor& result) {
+  return at::clamp_outf(self, min, max, result);
+}
+
+Tensor& clip_out(const Tensor& self, const c10::optional<Tensor>& min, const c10::optional<Tensor>& max, Tensor& result) {
+  return at::clamp_outf(self, min, max, result);
+}
+
+Tensor clip(const Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max) {
+  return at::clamp(self, min, max);
+}
+
+Tensor clip(const Tensor& self, const c10::optional<Tensor>& min, const c10::optional<Tensor>& max) {
+  return at::clamp(self, min, max);
+}
+
+Tensor& clip_(Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max) {
+  return at::clamp_(self, min, max);
+}
+
+Tensor& clip_(Tensor& self, const c10::optional<Tensor>& min, const c10::optional<Tensor>& max) {
+  return at::clamp_(self, min, max);
+}
 
 // Named tensor overloads
 

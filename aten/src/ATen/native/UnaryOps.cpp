@@ -557,78 +557,6 @@ Tensor signbit(const Tensor& self) {
   return at::signbit_out(result, self);
 }
 
-Tensor& clamp_out(Tensor& result, const Tensor& self, optional<Scalar> min, optional<Scalar> max) {
-  if (min && max) {
-    TORCH_CHECK(self.layout() == Layout::Strided,
-                "clamp only supports strided layout, got: ", self.layout());
-    auto iter = TensorIterator::unary_op(result, self);
-    clamp_stub(iter.device_type(), iter, *min, *max);
-  } else if (max) {
-    at::clamp_max_out(result, self, *max);
-  } else if (min) {
-    at::clamp_min_out(result, self, *min);
-  } else {
-    TORCH_CHECK(false, "At least one of 'min' or 'max' must not be None");
-  }
-  return result;
-}
-
-Tensor clamp(const Tensor& self, optional<Scalar> min, optional<Scalar> max) {
-  Tensor result = at::empty({0}, self.options());
-  return at::clamp_out(result, self, min, max);
-}
-
-Tensor& clamp_(Tensor& self, optional<Scalar> min, optional<Scalar> max) {
-  return at::clamp_out(self, self, min, max);
-}
-
-Tensor& clamp_max_out(Tensor& result, const Tensor& self, Scalar max) {
-  TORCH_CHECK(self.layout() == Layout::Strided,
-              "clamp_max only supports strided layout, got: ", self.layout());
-  auto iter = TensorIterator::unary_op(result, self);
-  clamp_max_stub(iter.device_type(), iter, max);
-  return result;
-}
-
-Tensor clamp_max(const Tensor& self, Scalar max) {
-  Tensor result = at::empty({0}, self.options());
-  return at::clamp_max_out(result, self, max);
-}
-
-Tensor& clamp_max_(Tensor& self, Scalar max) {
-  return at::clamp_max_out(self, self, max);
-}
-
-Tensor& clamp_min_out(Tensor& result, const Tensor& self, Scalar min) {
-  TORCH_CHECK(self.layout() == Layout::Strided,
-              "clamp_min only supports strided layout, got: ", self.layout());
-  auto iter = TensorIterator::unary_op(result, self);
-  clamp_min_stub(iter.device_type(), iter, min);
-  return result;
-}
-
-Tensor clamp_min(const Tensor& self, Scalar min) {
-  Tensor result = at::empty({0}, self.options());
-  return at::clamp_min_out(result, self, min);
-}
-
-Tensor& clamp_min_(Tensor& self, Scalar min) {
-  return at::clamp_min_out(self, self, min);
-}
-
-// Implements the "clip" alias for clamp
-Tensor& clip_out(Tensor& result, const Tensor& self, optional<Scalar> min, optional<Scalar> max) {
-  return at::clamp_out(result, self, min, max);
-}
-
-Tensor clip(const Tensor& self, optional<Scalar> min, optional<Scalar> max) {
-  return at::clamp(self, min, max);
-}
-
-Tensor& clip_(Tensor& self, optional<Scalar> min, optional<Scalar> max) {
-  return at::clamp_(self, min, max);
-}
-
 Tensor polygamma(int64_t n, const Tensor& self) {
   Tensor result = at::empty({0}, self.options());
   at::polygamma_out(result, n, self);
@@ -683,9 +611,6 @@ DEFINE_DISPATCH(asin_stub);
 DEFINE_DISPATCH(atan_stub);
 DEFINE_DISPATCH(bitwise_not_stub);
 DEFINE_DISPATCH(ceil_stub);
-DEFINE_DISPATCH(clamp_stub);
-DEFINE_DISPATCH(clamp_max_stub);
-DEFINE_DISPATCH(clamp_min_stub);
 DEFINE_DISPATCH(cos_stub);
 DEFINE_DISPATCH(cosh_stub);
 DEFINE_DISPATCH(digamma_stub);

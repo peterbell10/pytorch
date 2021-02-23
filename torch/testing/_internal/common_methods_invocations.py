@@ -1242,6 +1242,20 @@ def sample_inputs_fliplr_flipud(op_info, device, dtype, requires_grad):
 def sample_inputs_clamp(op_info, device, dtype, requires_grad):
     tensors = (
         make_tensor((S, M, S), device, dtype, low=None, high=None, requires_grad=requires_grad),
+        make_tensor((S, M, S), device, dtype, low=None, high=None, requires_grad=requires_grad),
+        make_tensor((S, M, S), device, dtype, low=None, high=None, requires_grad=requires_grad),
+        make_tensor((S, M, 1), device, dtype, low=None, high=None, requires_grad=requires_grad),
+        make_tensor((S, 1, S), device, dtype, low=None, high=None, requires_grad=requires_grad),
+    )
+    return [
+        SampleInput((tensors[0], tensors[1], tensors[2])),
+        SampleInput((tensors[0], tensors[3], tensors[4])),
+        SampleInput((tensors[1], tensors[3])),
+    ]
+
+def sample_inputs_clamp_scalar(op_info, device, dtype, requires_grad):
+    tensors = (
+        make_tensor((S, M, S), device, dtype, low=None, high=None, requires_grad=requires_grad),
         make_tensor((S, 0, M), device, dtype, low=None, high=None, requires_grad=requires_grad),
     )
     if dtype is torch.uint8:
@@ -1609,7 +1623,16 @@ op_db: List[OpInfo] = [
                          SkipInfo('TestCommon', 'test_variant_consistency_jit'),
                          SkipInfo('TestCommon', 'test_variant_consistency_eager',
                                   dtypes=[torch.complex64, torch.complex128]),)),
+    OpInfo('clamp',
+           aliases=('clip',),
+           ref=np.clip,
+           dtypes=all_types_and(torch.half, torch.bfloat16),
+           dtypesIfCPU=all_types_and(torch.bfloat16),
+           dtypesIfCUDA=all_types_and(torch.half, torch.bfloat16),
+           assert_autodiffed=True,
+           sample_inputs_func=sample_inputs_clamp),
     UnaryUfuncInfo('clamp',
+                   variant_test_name='scalar',
                    aliases=('clip', ),
                    ref=np.clip,
                    dtypes=all_types_and(torch.half, torch.bfloat16),
@@ -1621,7 +1644,7 @@ op_db: List[OpInfo] = [
                        # Reference: https://github.com/pytorch/pytorch/issues/51242
                        SkipInfo('TestUnaryUfuncs'),
                    ),
-                   sample_inputs_func=sample_inputs_clamp),
+                   sample_inputs_func=sample_inputs_clamp_scalar),
     UnaryUfuncInfo('conj',
                    ref=np.conj,
                    dtypes=all_types_and_complex_and(torch.bool,

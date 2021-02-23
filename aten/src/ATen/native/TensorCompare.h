@@ -20,4 +20,10 @@ DECLARE_DISPATCH(where_fn, where_kernel);
 using is_infinity_op_fn = void (*)(TensorIterator &);
 DECLARE_DISPATCH(is_infinity_op_fn, isposinf_stub);
 DECLARE_DISPATCH(is_infinity_op_fn, isneginf_stub);
+
+using clamp_fn = void (*)(TensorIterator &);
+DECLARE_DISPATCH(clamp_fn, clamp_stub);
+DECLARE_DISPATCH(clamp_fn, clamp_min_stub);
+DECLARE_DISPATCH(clamp_fn, clamp_max_stub);
+
 }} // namespace at::native

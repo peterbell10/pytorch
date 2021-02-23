@@ -169,49 +169,6 @@ void erfinv_kernel_cuda(TensorIterator& iter) {
   });
 }
 
-void clamp_kernel_cuda(TensorIterator& iter, Scalar min_value, Scalar max_value) {
-  AT_DISPATCH_ALL_TYPES_AND2(kHalf, kBFloat16, iter.dtype(), "clamp_cuda", [&]() {
-    auto lower = min_value.to<scalar_t>();
-    auto upper = max_value.to<scalar_t>();
-    gpu_kernel(iter, [=]GPU_LAMBDA(scalar_t v) -> scalar_t {
-      // Propagate nan, which doesn't propagate automatically for ROCm
-      if (_isnan(v)) {
-        return v;
-      } else {
-        return ::min(::max(v, lower), upper);
-      }
-    });
-  });
-}
-
-void clamp_min_kernel_cuda(TensorIterator& iter, Scalar min_value) {
-  AT_DISPATCH_ALL_TYPES_AND2(kHalf, kBFloat16, iter.dtype(), "clamp_min_cuda", [&]() {
-    auto lower = min_value.to<scalar_t>();
-    gpu_kernel(iter, [=]GPU_LAMBDA(scalar_t v) -> scalar_t {
-      // Propagate nan, which doesn't propagate automatically for ROCm
-      if (_isnan(v)) {
-        return v;
-      } else {
-        return ::max(v, lower);
-      }
-    });
-  });
-}
-
-void clamp_max_kernel_cuda(TensorIterator& iter, Scalar max_value) {
-  AT_DISPATCH_ALL_TYPES_AND2(kHalf, kBFloat16, iter.dtype(), "clamp_max_cuda", [&]() {
-    auto upper = max_value.to<scalar_t>();
-    gpu_kernel(iter, [=]GPU_LAMBDA(scalar_t v) -> scalar_t {
-      // Propagate nan, which doesn't propagate automatically for ROCm
-      if (_isnan(v)) {
-        return v;
-      } else {
-        return ::min(v, upper);
-      }
-    });
-  });
-}
-
 void nan_to_num_kernel_cuda(
     TensorIterator& iter,
     c10::optional<double> nan,
@@ -265,9 +222,6 @@ REGISTER_DISPATCH(logit_stub, &logit_kernel_cuda);
 REGISTER_DISPATCH(erf_stub, &erf_kernel_cuda);
 REGISTER_DISPATCH(erfc_stub, &erfc_kernel_cuda);
 REGISTER_DISPATCH(erfinv_stub, &erfinv_kernel_cuda);
-REGISTER_DISPATCH(clamp_stub, &clamp_kernel_cuda);
-REGISTER_DISPATCH(clamp_min_stub, &clamp_min_kernel_cuda);
-REGISTER_DISPATCH(clamp_max_stub, &clamp_max_kernel_cuda);
 REGISTER_DISPATCH(nan_to_num_stub, &nan_to_num_kernel_cuda);
 REGISTER_DISPATCH(kaiser_window_stub, &kaiser_window_kernel_cuda);
 
