@@ -1033,6 +1033,11 @@
   dispatch:
     DefaultBackend: clamp_min_
 
+- func: clamp_min_.Tensor(Tensor(a!) self, Tensor min) -> Tensor(a!)
+  variants: function, method
+  dispatch:
+    DefaultBackend: clamp_min_
+
 - func: clamp_min.out(Tensor self, Scalar min, *, Tensor(a!) out) -> Tensor(a!)
   dispatch:
     CPU, CUDA: clamp_min_out
