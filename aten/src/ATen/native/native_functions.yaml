@@ -984,7 +984,7 @@
 - func: clamp.out(Tensor self, Scalar? min=None, Scalar? max=None, *, Tensor(a!) out) -> Tensor(a!)
   cpp_no_default_args: ['min']
   dispatch:
-    DefaultBackend: clamp_out
+    CPU, CUDA: clamp_out
 
 - func: clamp.Tensor_out(Tensor self, Tensor? min=None, Tensor? max=None, *, Tensor(a!) out) -> Tensor(a!)
   dispatch:

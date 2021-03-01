@@ -446,7 +446,7 @@ std::tuple<Tensor&,Tensor&> min_out(Tensor& min, Tensor& min_indices,
 
 static Tensor scalar_tensor_like(const Tensor& like, const Scalar& value) {
   // FIXME: This should do type promotion with value, but that would be a BC-break
-  return at::scalar_tensor(value, at::device(like.device()).dtype(like.scalar_type()));
+  return at::scalar_tensor(value, at::device(kCPU).dtype(like.scalar_type()));
 }
 
 static c10::optional<Tensor> scalar_tensor_like(const Tensor& like, const c10::optional<Scalar>& value) {
@@ -457,14 +457,30 @@ static c10::optional<Tensor> scalar_tensor_like(const Tensor& like, const c10::o
 }
 
 Tensor& clamp_out(const Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max, Tensor& result) {
-  return at::clamp_outf(self, scalar_tensor_like(self, min), scalar_tensor_like(self, max), result);
+  if (min && max) {
+    auto iter = TensorIteratorConfig()
+                .set_check_mem_overlap(true)
+                .add_output(result)
+                .add_input(self)
+                .add_input(scalar_tensor_like(self, *min))
+                .add_input(scalar_tensor_like(self, *max))
+                .promote_inputs_to_common_dtype(true)
+                .cast_common_dtype_to_outputs(true)
+                .enforce_safe_casting_to_output(true)
+                // allow_cpu_scalars(true) only works for binary operators, just ignore device checks altogether
+                .check_all_same_device(false)
+                .build();
+    clamp_stub(iter.device_type(), iter);
+    return result;
+  }
+  return at::native::clamp_out(self, scalar_tensor_like(self, min), scalar_tensor_like(self, max), result);
 }
 
 Tensor& clamp_out(const Tensor& self, const c10::optional<Tensor>& min,
                   const c10::optional<Tensor>& max, Tensor& result) {
   if (min && max) {
     TORCH_CHECK(self.layout() == Layout::Strided,
-                "clamp only supports strided layout, got: ", self.layout());
+                "torch.clamp only supports strided layout, got: ", self.layout());
     auto iter = TensorIteratorConfig()
                 .set_check_mem_overlap(true)
                 .add_output(result)
@@ -481,7 +497,7 @@ Tensor& clamp_out(const Tensor& self, const c10::optional<Tensor>& min,
   } else if (min) {
     at::clamp_min_outf(self, *min, result);
   } else {
-    TORCH_CHECK(false, "At least one of 'min' or 'max' must not be None");
+    TORCH_CHECK(false, "torch.clamp: At least one of 'min' or 'max' must not be None");
   }
   return result;
 }
@@ -505,12 +521,12 @@ Tensor& clamp_(Tensor& self, const c10::optional<Tensor>& min, const c10::option
 }
 
 Tensor& clamp_max_out(const Tensor& self, Scalar max, Tensor& result) {
-  return at::clamp_max_outf(self, scalar_tensor_like(self, max), result);
+  return at::native::clamp_max_out(self, scalar_tensor_like(self, max), result);
 }
 
 Tensor& clamp_max_out(const Tensor& self, const Tensor& max, Tensor& result) {
   TORCH_CHECK(self.layout() == Layout::Strided,
-              "clamp_max only supports strided layout, got: ", self.layout());
+              "torch.clamp only supports strided layout, got: ", self.layout());
   auto iter = TensorIterator::binary_op(result, self, max);
   clamp_max_stub(iter.device_type(), iter);
   return result;
@@ -535,12 +551,12 @@ Tensor& clamp_max_(Tensor& self, const Tensor& max) {
 }
 
 Tensor& clamp_min_out(const Tensor& self, Scalar min, Tensor& result) {
-  return at::clamp_min_outf(self, scalar_tensor_like(self, min), result);
+  return at::native::clamp_min_out(self, scalar_tensor_like(self, min), result);
 }
 
 Tensor& clamp_min_out(const Tensor& self, const Tensor& min, Tensor& result) {
   TORCH_CHECK(self.layout() == Layout::Strided,
-              "clamp_min only supports strided layout, got: ", self.layout());
+              "torch.clamp only supports strided layout, got: ", self.layout());
   auto iter = TensorIterator::binary_op(result, self, min);
   clamp_min_stub(iter.device_type(), iter);
   return result;
