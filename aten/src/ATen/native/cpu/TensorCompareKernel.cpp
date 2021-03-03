@@ -225,6 +225,22 @@ static void clamp_kernel_impl(TensorIterator& iter) {
   });
 }
 
+static void clamp_scalar_kernel_impl(TensorIterator& iter, Scalar min_, Scalar max_) {
+  AT_DISPATCH_ALL_TYPES_AND(kBFloat16, iter.common_dtype(), "clamp_scalar_cpu", [&]() {
+    const auto min = min_.to<scalar_t>();
+    const auto max = max_.to<scalar_t>();
+    const Vec256<scalar_t> min_vec(min);
+    const Vec256<scalar_t> max_vec(max);
+    cpu_kernel_vec(iter,
+      [=](scalar_t a) -> scalar_t {
+        return std::min(std::max(a, min), max);
+      },
+      [=](Vec256<scalar_t> a) {
+        return vec256::clamp(a, min_vec, max_vec);
+      });
+  });
+}
+
 static void clamp_max_kernel_impl(TensorIterator& iter) {
   AT_DISPATCH_ALL_TYPES_AND(kBFloat16, iter.common_dtype(), "clamp_max_cpu", [&]() {
     cpu_kernel_vec(iter,
@@ -233,6 +249,20 @@ static void clamp_max_kernel_impl(TensorIterator& iter) {
       },
       [](Vec256<scalar_t> a, Vec256<scalar_t> max) {
         return vec256::clamp_max(a, max);
+      });
+  });
+}
+
+static void clamp_max_scalar_kernel_impl(TensorIterator& iter, Scalar max_) {
+  AT_DISPATCH_ALL_TYPES_AND(kBFloat16, iter.common_dtype(), "clamp_max_scalar_cpu", [&]() {
+    const auto max = max_.to<scalar_t>();
+    const Vec256<scalar_t> max_vec(max);
+    cpu_kernel_vec(iter,
+      [=](scalar_t a) -> scalar_t {
+        return std::min(a, max);
+      },
+      [=](Vec256<scalar_t> a) {
+        return vec256::clamp_max(a, max_vec);
       });
   });
 }
@@ -249,6 +279,20 @@ static void clamp_min_kernel_impl(TensorIterator& iter) {
   });
 }
 
+static void clamp_min_scalar_kernel_impl(TensorIterator& iter, Scalar min_) {
+  AT_DISPATCH_ALL_TYPES_AND(kBFloat16, iter.common_dtype(), "clamp_min_cpu", [&]() {
+    const auto min = min_.to<scalar_t>();
+    const Vec256<scalar_t> min_vec(min);
+    cpu_kernel_vec(iter,
+        [=](scalar_t a) -> scalar_t {
+          return std::max(a, min);
+        },
+        [=](Vec256<scalar_t> a) {
+          return vec256::clamp_min(a, min_vec);
+        });
+  });
+}
+
 } // anonymous namespace
 
 REGISTER_DISPATCH(max_stub, &max_kernel_impl);
@@ -260,5 +304,8 @@ REGISTER_DISPATCH(isneginf_stub, &isneginf_kernel_impl);
 REGISTER_DISPATCH(clamp_stub, &clamp_kernel_impl);
 REGISTER_DISPATCH(clamp_min_stub, &clamp_min_kernel_impl);
 REGISTER_DISPATCH(clamp_max_stub, &clamp_max_kernel_impl);
+REGISTER_DISPATCH(clamp_scalar_stub, &clamp_scalar_kernel_impl);
+REGISTER_DISPATCH(clamp_min_scalar_stub, &clamp_min_scalar_kernel_impl);
+REGISTER_DISPATCH(clamp_max_scalar_stub, &clamp_max_scalar_kernel_impl);
 
 }} // namespace at::native

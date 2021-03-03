@@ -49,32 +49,49 @@ void isneginf_kernel_impl(TensorIterator &iter) {
 
 void clamp_kernel_impl(TensorIterator& iter) {
   AT_DISPATCH_ALL_TYPES_AND2(kHalf, kBFloat16, iter.common_dtype(), "clamp_cuda", [&] {
-    auto clamp = []GPU_LAMBDA(scalar_t v, scalar_t lower, scalar_t upper) -> scalar_t {
+    gpu_kernel(iter, []GPU_LAMBDA(scalar_t v, scalar_t lower, scalar_t upper) -> scalar_t {
       // Propagate nan, which doesn't propagate automatically for ROCm
       if (at::_isnan(v)) {
         return v;
       } else {
         return ::min(::max(v, lower), upper);
       }
-    };
+    });
+  });
+}
 
-    if (iter.is_cpu_scalar(2) && iter.is_cpu_scalar(3)) {
-      const auto lower = iter.scalar_value<scalar_t>(2);
-      const auto upper = iter.scalar_value<scalar_t>(3);
-      iter.remove_operand(3);
-      iter.remove_operand(2);
-      gpu_kernel(iter, [=]GPU_LAMBDA(scalar_t v) -> scalar_t {
-        return clamp(v, lower, upper);
-      });
-    } else {
-      gpu_kernel(iter, clamp);
-    }
+void clamp_scalar_kernel_impl(TensorIterator& iter, Scalar min, Scalar max) {
+  AT_DISPATCH_ALL_TYPES_AND2(kHalf, kBFloat16, iter.common_dtype(), "clamp_scalar_cuda", [&] {
+    const auto lower = min.to<scalar_t>();
+    const auto upper = max.to<scalar_t>();
+    gpu_kernel(iter, [=]GPU_LAMBDA(scalar_t v) -> scalar_t {
+      // Propagate nan, which doesn't propagate automatically for ROCm
+      if (at::_isnan(v)) {
+        return v;
+      } else {
+        return ::min(::max(v, lower), upper);
+      }
+    });
   });
 }
 
 void clamp_min_kernel_impl(TensorIterator& iter) {
   AT_DISPATCH_ALL_TYPES_AND2(kHalf, kBFloat16, iter.common_dtype(), "clamp_min_cuda", [&] {
     gpu_kernel_with_scalars(iter, []GPU_LAMBDA(scalar_t v, scalar_t lower) -> scalar_t {
+      // Propagate nan, which doesn't propagate automatically for ROCm
+      if (_isnan(v)) {
+        return v;
+      } else {
+        return ::max(v, lower);
+      }
+    });
+  });
+}
+
+void clamp_min_scalar_kernel_impl(TensorIterator& iter, Scalar min) {
+  AT_DISPATCH_ALL_TYPES_AND2(kHalf, kBFloat16, iter.common_dtype(), "clamp_min_scalar_cuda", [&] {
+    auto lower = min.to<scalar_t>();
+    gpu_kernel(iter, [=]GPU_LAMBDA(scalar_t v) -> scalar_t {
       // Propagate nan, which doesn't propagate automatically for ROCm
       if (_isnan(v)) {
         return v;
@@ -98,6 +115,20 @@ void clamp_max_kernel_impl(TensorIterator& iter) {
   });
 }
 
+void clamp_max_scalar_kernel_impl(TensorIterator& iter, Scalar max) {
+  AT_DISPATCH_ALL_TYPES_AND2(kHalf, kBFloat16, iter.common_dtype(), "clamp_max_scalar_cuda", [&] {
+    const auto upper = max.to<scalar_t>();
+    gpu_kernel(iter, [=]GPU_LAMBDA(scalar_t v) -> scalar_t {
+      // Propagate nan, which doesn't propagate automatically for ROCm
+      if (_isnan(v)) {
+        return v;
+      } else {
+        return ::min(v, upper);
+      }
+    });
+  });
+}
+
 } // anonymous namespace
 
 
@@ -107,5 +138,8 @@ REGISTER_DISPATCH(isneginf_stub, &isneginf_kernel_impl);
 REGISTER_DISPATCH(clamp_stub, &clamp_kernel_impl);
 REGISTER_DISPATCH(clamp_min_stub, &clamp_min_kernel_impl);
 REGISTER_DISPATCH(clamp_max_stub, &clamp_max_kernel_impl);
+REGISTER_DISPATCH(clamp_scalar_stub, &clamp_scalar_kernel_impl);
+REGISTER_DISPATCH(clamp_min_scalar_stub, &clamp_min_scalar_kernel_impl);
+REGISTER_DISPATCH(clamp_max_scalar_stub, &clamp_max_scalar_kernel_impl);
 
 }} // namespace at::native

@@ -19,6 +19,9 @@ DEFINE_DISPATCH(isneginf_stub);
 DEFINE_DISPATCH(clamp_stub);
 DEFINE_DISPATCH(clamp_min_stub);
 DEFINE_DISPATCH(clamp_max_stub);
+DEFINE_DISPATCH(clamp_scalar_stub);
+DEFINE_DISPATCH(clamp_min_scalar_stub);
+DEFINE_DISPATCH(clamp_max_scalar_stub);
 
 bool allclose(const Tensor& self, const Tensor& other, double rtol, double atol, bool equal_nan) {
   return at::isclose(self, other, rtol, atol, equal_nan).all().item<uint8_t>();
@@ -444,36 +447,18 @@ std::tuple<Tensor&,Tensor&> min_out(Tensor& min, Tensor& min_indices,
   return result;
 }
 
-static Tensor scalar_tensor_like(const Tensor& like, const Scalar& value) {
-  // FIXME: This should do type promotion with value, but that would be a BC-break
-  return at::scalar_tensor(value, at::device(kCPU).dtype(like.scalar_type()));
-}
-
-static c10::optional<Tensor> scalar_tensor_like(const Tensor& like, const c10::optional<Scalar>& value) {
-  if (value) {
-    return scalar_tensor_like(like, *value);
-  }
-  return c10::nullopt;
-}
-
 Tensor& clamp_out(const Tensor& self, c10::optional<Scalar> min, c10::optional<Scalar> max, Tensor& result) {
   if (min && max) {
-    auto iter = TensorIteratorConfig()
-                .set_check_mem_overlap(true)
-                .add_output(result)
-                .add_input(self)
-                .add_input(scalar_tensor_like(self, *min))
-                .add_input(scalar_tensor_like(self, *max))
-                .promote_inputs_to_common_dtype(true)
-                .cast_common_dtype_to_outputs(true)
-                .enforce_safe_casting_to_output(true)
-                // allow_cpu_scalars(true) only works for binary operators, just ignore device checks altogether
-                .check_all_same_device(false)
-                .build();
-    clamp_stub(iter.device_type(), iter);
-    return result;
+    auto iter = TensorIterator::unary_op(result, self);
+    clamp_scalar_stub(iter.device_type(), iter, *min, *max);
+  } else if (max) {
+    at::clamp_max_outf(self, *max, result);
+  } else if (min) {
+    at::clamp_min_outf(self, *min, result);
+  } else {
+    TORCH_CHECK(false, "torch.clamp: At least one of 'min' or 'max' must not be None");
   }
-  return at::native::clamp_out(self, scalar_tensor_like(self, min), scalar_tensor_like(self, max), result);
+  return result;
 }
 
 Tensor& clamp_out(const Tensor& self, const c10::optional<Tensor>& min,
@@ -521,7 +506,9 @@ Tensor& clamp_(Tensor& self, const c10::optional<Tensor>& min, const c10::option
 }
 
 Tensor& clamp_max_out(const Tensor& self, Scalar max, Tensor& result) {
-  return at::native::clamp_max_out(self, scalar_tensor_like(self, max), result);
+  auto iter = TensorIterator::unary_op(result, self);
+  clamp_max_scalar_stub(iter.device_type(), iter, max);
+  return result;
 }
 
 Tensor& clamp_max_out(const Tensor& self, const Tensor& max, Tensor& result) {
@@ -551,7 +538,9 @@ Tensor& clamp_max_(Tensor& self, const Tensor& max) {
 }
 
 Tensor& clamp_min_out(const Tensor& self, Scalar min, Tensor& result) {
-  return at::native::clamp_min_out(self, scalar_tensor_like(self, min), result);
+  auto iter = TensorIterator::unary_op(result, self);
+  clamp_min_scalar_stub(iter.device_type(), iter, min);
+  return result;
 }
 
 Tensor& clamp_min_out(const Tensor& self, const Tensor& min, Tensor& result) {
