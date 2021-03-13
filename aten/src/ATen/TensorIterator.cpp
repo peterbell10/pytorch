@@ -685,16 +685,15 @@ bool TensorIteratorBase::is_cpu_scalar(int arg) const {
 }
 
 void TensorIteratorBase::cast_outputs() {
-  for (auto& op : operands_) {
-    if (op.is_output && op.original_tensor.defined() &&
-        op.original_tensor.scalar_type() != op.current_dtype) {
-      // TODO: Now that set_output resizes both the original_tensor
-      // and tensor, this condition should no longer ever be true
-      if (op.original_tensor.sizes() != op.tensor.sizes()){
-        op.original_tensor.resize_as_(op.tensor).as_strided_(op.tensor.sizes(), op.tensor.strides());
-      }
+  for (int64_t oarg = 0; oarg < num_outputs_; ++oarg) {
+    auto& op = operands_[oarg];
+    if (op.original_tensor.defined()) {
+      TORCH_INTERNAL_ASSERT(op.original_tensor.scalar_type() != op.current_dtype);
+      TORCH_INTERNAL_ASSERT(
+          op.original_tensor.sizes() == op.tensor.sizes(),
+          "set_output should resize both original_tensor and tensor");
       op.original_tensor.copy_(op.tensor);
-      op.tensor = op.original_tensor;
+      op.tensor = std::move(op.original_tensor);
     }
   }
 }
