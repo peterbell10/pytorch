@@ -235,8 +235,8 @@ void TensorIteratorBase::compute_types(const TensorIteratorConfig& config) {
     TORCH_INTERNAL_ASSERT(op.target_dtype == op.current_dtype)
 
     // Acquires the first non-CPU device (if any) as the common device
-    if (common_device == kCPU && !op.tensor.device().is_cpu()) {
-      common_device = op.tensor.device();
+    if (common_device == kCPU) {
+      common_device = op.device;
     }
 
     if (!op.is_output) {
@@ -326,7 +326,7 @@ void TensorIteratorBase::compute_types(const TensorIteratorConfig& config) {
       // Handles CPU scalars on CUDA kernels that support them
       if ((common_device.is_cuda() || common_device.is_xpu()) &&
           config.allow_cpu_scalars_ && !op.is_output && op.tensor.dim() == 0 &&
-          op.tensor.device().is_cpu()) {
+          op.device.is_cpu()) {
         TORCH_CHECK(current_cpu_scalars_on_cuda < max_cpu_scalars_on_cuda,
                     "Trying to pass too many CPU scalars to CUDA kernel!");
         ++current_cpu_scalars_on_cuda;
@@ -1289,7 +1289,7 @@ void TensorIteratorBase::set_output(int64_t output_idx, IntArrayRef sizes, IntAr
       TORCH_INTERNAL_ASSERT(op.original_tensor.is_same(t));
       TORCH_INTERNAL_ASSERT(!op.tensor.is_same(t));
       // fastpath CPU to skip a dispatcher trip
-      if (op.tensor.device().is_cpu()) {
+      if (op.device.is_cpu()) {
         at::native::resize_output_cpu(op.tensor, sizes);
       } else {
         at::native::resize_output(op.tensor, sizes);
@@ -1320,7 +1320,7 @@ void TensorIterator::set_output(int64_t output_idx, IntArrayRef sizes, IntArrayR
       op.current_dtype = op.target_dtype;
   } else if (op.will_resize) {
       // fastpath CPU to skip a dispatcher trip
-      if (op.tensor.device().is_cpu()) {
+      if (op.device.is_cpu()) {
         at::native::resize_output_cpu(op.tensor, sizes);
       } else {
         at::native::resize_output(op.tensor, sizes);
