@@ -210,12 +210,9 @@ void TensorIteratorBase::compute_types(const TensorIteratorConfig& config) {
   bool has_different_output_dtypes = false;
   bool has_undefined_outputs = false;
 
-  for (auto& op : operands_) {
-    // Validates that all inputs have type information, and that
-    //   if an output is missing type information that we can infer
-    //   the device it should be allocated on.
+  for (int64_t oarg = 0; oarg < num_outputs_; ++oarg) {
+    auto& op = operands_[oarg];
     if (!op.is_type_defined()) {
-      TORCH_INTERNAL_ASSERT(op.is_output, "Found type undefined input tensor!");
       if (config.static_dtype_and_device_.has_value()) {
         op.target_dtype = config.static_dtype_and_device_->first;
         op.device = config.static_dtype_and_device_->second;
@@ -226,39 +223,44 @@ void TensorIteratorBase::compute_types(const TensorIteratorConfig& config) {
       }
     }
 
-    // Validates input tensors are defined
     if (!op.tensor.defined()) {
-      TORCH_INTERNAL_ASSERT(op.is_output, "Found undefined input tensor!");
       continue;
     }
 
-    TORCH_INTERNAL_ASSERT(op.target_dtype == op.current_dtype)
+    TORCH_INTERNAL_ASSERT(op.target_dtype == op.current_dtype);
 
     // Acquires the first non-CPU device (if any) as the common device
     if (common_device == kCPU) {
       common_device = op.device;
     }
 
-    if (!op.is_output) {
-      // Determines if there are varying input dtypes
-      // NOTE: the common dtype is set to the first defined input dtype observed
-      if (op.target_dtype != common_dtype_) {
-        if (common_dtype_ == ScalarType::Undefined) {
-          common_dtype_ = op.target_dtype;
-        } else {
-          has_different_input_dtypes = true;
-        }
-      }
-    } else {  // op.is_output
-      // Determines if there are varying output dtypes
-      // NOTE: the output dtype is set to the first defined output dtype observed
-      if (op.target_dtype != output_dtype) {
-        if (output_dtype == ScalarType::Undefined) {
-          output_dtype = op.target_dtype;
-        } else {
-          has_different_output_dtypes = true;
-        }
-      }
+    // Determines if there are varying output dtypes
+    // NOTE: the output dtype is set to the first defined output dtype observed
+    if (output_dtype == ScalarType::Undefined) {
+      output_dtype = op.target_dtype;
+    } else if (op.target_dtype != output_dtype) {
+      has_different_output_dtypes = true;
+    }
+  }
+
+  for (int64_t iarg = num_outputs_; iarg < ntensors(); ++iarg) {
+    auto& op = operands_[iarg];
+    // Validate that all inputs have type information.
+    TORCH_INTERNAL_ASSERT(op.is_type_defined(), "Found type undefined input tensor!");
+    TORCH_INTERNAL_ASSERT(op.tensor.defined(), "Found undefined input tensor!");
+    TORCH_INTERNAL_ASSERT(op.target_dtype == op.current_dtype);
+
+    // Acquires the first non-CPU device (if any) as the common device
+    if (common_device == kCPU) {
+      common_device = op.device;
+    }
+
+    // Determines if there are varying input dtypes
+    // NOTE: the common dtype is set to the first defined input dtype observed
+    if (common_dtype_ == ScalarType::Undefined) {
+      common_dtype_ = op.target_dtype;
+    } else if (op.target_dtype != common_dtype_) {
+      has_different_input_dtypes = true;
     }
   }
 
@@ -273,11 +275,7 @@ void TensorIteratorBase::compute_types(const TensorIteratorConfig& config) {
       (common_dtype_ != output_dtype && output_dtype != ScalarType::Undefined))) {
     // Throws an informative error message
     for (auto& op : operands_) {
-      if (!op.tensor.defined()) {
-        continue;
-      }
-
-      TORCH_CHECK(op.target_dtype == common_dtype_,
+      TORCH_CHECK(!op.tensor.defined() || op.target_dtype == common_dtype_,
                   "Found dtype ", op.target_dtype, " but expected ", common_dtype_);
     }
   }
@@ -330,8 +328,8 @@ void TensorIteratorBase::compute_types(const TensorIteratorConfig& config) {
         TORCH_CHECK(current_cpu_scalars_on_cuda < max_cpu_scalars_on_cuda,
                     "Trying to pass too many CPU scalars to CUDA kernel!");
         ++current_cpu_scalars_on_cuda;
-      } else if (op.device != common_device) {
-        TORCH_CHECK(false,
+      } else {
+        TORCH_CHECK(op.device == common_device,
                     "Expected all tensors to be on the same device, but "
                     "found at least two devices, ", common_device, " and ", op.device, "!");
       }
@@ -352,8 +350,6 @@ void TensorIteratorBase::compute_types(const TensorIteratorConfig& config) {
       // unnecessary if we aren't going to actually do the compute
       if (config.cast_common_dtype_to_outputs_ && op.is_output && op.current_dtype != common_dtype_ && !is_meta_) {
         TORCH_INTERNAL_ASSERT(op.tensor.defined());
-        // Marker [Output original_tensor is set]
-        op.original_tensor = op.tensor;
         // NB: do NOT use set_output here, as the temporary is NOT a true output;
         // op.tensor is the true output and it was pre-provided for us.
         // TODO: The logic for cast_outputs will need to be handled by the
@@ -362,9 +358,11 @@ void TensorIteratorBase::compute_types(const TensorIteratorConfig& config) {
         // then after calling the out kernel, do the conversion (which
         // is cast_outputs here), but integrating this with existing
         // TensorIterator will take a little doing
-        op.tensor = at::empty_like(op.tensor,
-                                   op.tensor.options().dtype(common_dtype_),
-                                   LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+				auto new_tensor = at::empty_like(op.tensor,
+																				 op.tensor.options().dtype(common_dtype_),
+																				 LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+        // Marker [Output original_tensor is set]
+        op.original_tensor = std::exchange(op.tensor, std::move(new_tensor));
         if (!names_.empty()) {
           namedinference::propagate_names(op.tensor, names_);
         }
@@ -374,8 +372,7 @@ void TensorIteratorBase::compute_types(const TensorIteratorConfig& config) {
 
       // Promotes inputs by creating temporaries of the correct dtype
       if (config.promote_inputs_to_common_dtype_ && !op.is_output && op.current_dtype != common_dtype_) {
-        op.original_tensor = op.tensor;
-        op.tensor = op.tensor.to(common_dtype_);
+        op.original_tensor = std::exchange(op.tensor, op.tensor.to(common_dtype_));
         op.current_dtype = common_dtype_;
         op.target_dtype = common_dtype_;
       }
