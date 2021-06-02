@@ -3,6 +3,7 @@
 #include <ATen/native/cpu/Loops.h>
 #include <ATen/Parallel.h>
 #include <c10/util/TypeList.h>
+#include <c10/util/Unroll.h>
 
 #include <sstream>
 
@@ -178,7 +179,7 @@ struct all_same : guts::conjunction<
 // into several pieces, reduce each separately, and then combine them.
 
 template <typename ops_t, typename init_t>
-void binary_kernel_reduce(TensorIteratorBase& iter, ops_t ops, init_t init) {
+void binary_kernel_reduce(TensorIteratorBase& iter, ops_t ops, const init_t init) {
   using rf_t = decltype(&ops_t::reduce);
   using cf_t = decltype(&ops_t::combine);
   using pf_t = decltype(&ops_t::project);
@@ -202,17 +203,35 @@ void binary_kernel_reduce(TensorIteratorBase& iter, ops_t ops, init_t init) {
     "the accumulate type must be default-constructible"
   );
   const int num_outputs = iter.noutputs();
-  iter.foreach_reduced_elt([&ops, &init, num_outputs](const TensorIteratorBase &sub_iter) {
-    auto reduction_body = [&ops, &sub_iter, num_outputs](acc_t acc, int64_t begin, int64_t end) -> acc_t {
-      int ntensors = sub_iter.ntensors();
-      sub_iter.serial_for_each([&acc, &ops, num_outputs, ntensors, begin](char** data, const int64_t* strides, int64_t size) {
-        AT_ASSERT(ntensors - num_outputs == 1);
-        char *in = data[ntensors - 1];
-        int64_t stride = strides[ntensors - 1];
-        for (int64_t i = 0; i < size; ++i) {
-          acc = ops.reduce(acc, *(data_t*)in, begin + i);
+  const int num_inputs = iter.ninputs();
+  const int num_tensors = iter.ntensors();
+  TORCH_INTERNAL_ASSERT(num_inputs == 1);
+
+  iter.foreach_reduced_elt([&ops, &init, num_outputs, num_tensors](const TensorIteratorBase &sub_iter) {
+    auto reduction_body = [&ops, &sub_iter, &init, num_outputs, num_tensors](acc_t acc, int64_t begin, int64_t end) -> acc_t {
+      sub_iter.serial_for_each([&acc, &ops, &init, num_outputs, num_tensors, begin](char** data, const int64_t* strides, int64_t size) {
+        constexpr int ilp_factor = 4;
+        acc_t local_acc[ilp_factor];
+        local_acc[0] = acc;
+        std::fill_n(&local_acc[1], ilp_factor - 1, init);
+        const char *in = data[num_tensors - 1];
+        const int64_t stride = strides[num_tensors - 1];
+        int64_t i = 0;
+        for (; i + (ilp_factor - 1) < size; i += ilp_factor) {
+          c10::ForcedUnroll<ilp_factor>{}([&](int k) {
+            auto ptr = reinterpret_cast<const data_t*>(in + k * stride);
+            local_acc[k] = ops.reduce(local_acc[k], *ptr, begin + i + k);
+          });
+          in += ilp_factor * stride;
+        }
+        for (; i < size; ++i) {
+          local_acc[0] = ops.reduce(local_acc[0], *(data_t*)in, begin + i);
           in += stride;
         }
+        for (int k = 1; k < ilp_factor; ++k) {
+          local_acc[0] = ops.combine(local_acc[0], local_acc[k]);
+        }
+        acc = local_acc[0];
       }, {begin, end});
       return ops.translate_idx(acc, sub_iter.view_offsets()[0]);
     };
