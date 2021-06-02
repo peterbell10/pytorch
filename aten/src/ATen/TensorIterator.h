@@ -159,9 +159,10 @@ struct TORCH_API TensorIteratorBase : public impl::MetaBase {
   // parallelization of the inner loop.
   using loop2d_t = c10::function_ref<void(char** data, const int64_t* strides, int64_t size0, int64_t size1)>;
 
-  using loop_subiter_t = c10::function_ref<void(TensorIteratorBase& subiter)>;
+  using loop_subiter_t = c10::function_ref<void(const TensorIteratorBase& subiter)>;
 
-  void foreach_reduced_elt(loop_subiter_t loop, bool parallelize=true);
+  void foreach_reduced_elt(loop_subiter_t loop) const;
+  void serial_foreach_reduced_elt(loop_subiter_t loop, Range range) const;
 
   int ndim() const { return shape_.size(); }
   IntArrayRef shape() const { return shape_; }
@@ -241,7 +242,7 @@ struct TORCH_API TensorIteratorBase : public impl::MetaBase {
 
 private:
   template <typename loop1d_t>
-  auto loop_2d_from_1d(const loop1d_t& loop) {
+  auto loop_2d_from_1d(const loop1d_t& loop) const {
     return [loop, ntensor=ntensors()](
         char** base, const int64_t* strides, int64_t size0, int64_t size1) {
       PtrVector data(base, base + ntensor);
@@ -262,11 +263,11 @@ public:
             std::enable_if_t<std::is_convertible<
               loop1d_t, c10::function_ref<void(char**, const int64_t* strides, int64_t size)>
             >::value, int> = 0>
-  void for_each(loop1d_t loop, int64_t grain_size = at::internal::GRAIN_SIZE) {
+  void for_each(loop1d_t loop, int64_t grain_size = at::internal::GRAIN_SIZE) const {
     for_each(loop_2d_from_1d(loop), grain_size);
   }
 
-  void for_each(loop2d_t loop, int64_t grain_size = at::internal::GRAIN_SIZE);
+  void for_each(loop2d_t loop, int64_t grain_size = at::internal::GRAIN_SIZE) const;
 
   void parallel_reduce(loop2d_t loop);
 
@@ -274,7 +275,7 @@ public:
             std::enable_if_t<std::is_convertible<
               loop1d_t, c10::function_ref<void(char**, const int64_t* strides, int64_t size)>
             >::value, int> = 0>
-  void serial_for_each(loop1d_t loop, Range range) {
+  void serial_for_each(loop1d_t loop, Range range) const {
     serial_for_each(loop_2d_from_1d(loop), range);
   }
 

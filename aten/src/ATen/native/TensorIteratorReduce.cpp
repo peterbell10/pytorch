@@ -121,57 +121,64 @@ static void parallel_dim_reduction(TensorIteratorBase& iter, loop2d_t loop) {
   });
 }
 
-void TensorIteratorBase::foreach_reduced_elt(loop_subiter_t loop, bool parallelize) {
-  AT_ASSERT(ninputs() == 1);
-  AT_ASSERT(noutputs() >= 1);
-
-  auto shape = this->shape();
-  if (output(0).numel() == 0) {
+void TensorIteratorBase::serial_foreach_reduced_elt(loop_subiter_t loop, Range range) const {
+  TORCH_INTERNAL_ASSERT(ninputs() == 1);
+  TORCH_INTERNAL_ASSERT(noutputs() >= 1);
+  if (range.size() == 0) {
     return;
   }
-  if (output(0).numel() == 1) {
-    loop(*this);
+
+  const auto shape = this->shape();
+  const auto ndim = this->ndim();
+  const auto reduce_dims = num_reduce_dims();
+
+  const size_t noperands = operands_.size();
+  const auto base_ptrs = this->get_base_ptrs();
+  auto all_strides = this->get_strides();
+  auto non_reduced_strides = IntArrayRef{all_strides}.slice(
+      noperands * reduce_dims, all_strides.size() - noperands * reduce_dims);
+  auto non_reduced_shape = shape.slice(reduce_dims, ndim - reduce_dims);
+
+  // Duplicate the TensorIterator, and narrow it to point to one output element.
+  // Then update the pointers & view offsets appropriately for each call.
+  TensorIterator reduce_iter = *this;
+  for (int i = reduce_dims; i < ndim; ++i) {
+    reduce_iter.shape_[i] = 1;
   }
-  else if (numel() < at::internal::GRAIN_SIZE || at::get_num_threads() == 1 ||
-      at::in_parallel_region() || !parallelize) {
-    auto reduce_dims = num_reduce_dims();
 
-    auto non_reduced_shape = shape.slice(reduce_dims, shape.size() - reduce_dims);
-
-    int64_t non_reduced_numel = 1;
-    for (const auto i : c10::irange(non_reduced_shape.size())) {
-      non_reduced_numel *= non_reduced_shape[i];
+  c10::SmallBuffer<char*, 8> data_ptrs(noperands);
+  DimCounter dims {non_reduced_shape, range};
+  while (!dims.is_done()) {
+    for (int i = reduce_dims; i < ndim; ++i) {
+      reduce_iter.view_offsets_[i] = view_offsets_[i] + dims.values[i - reduce_dims];
     }
-    DimCounter dims {non_reduced_shape, {0, non_reduced_numel}};
-    while (!dims.is_done()) {
-      TensorIterator reduced = *this;
-      reduced.select_all_keeping_dim(reduce_dims, dims.values);
-      loop(reduced);
-      dims.increment({1, 1});
+    at::internal::get_data_ptrs(data_ptrs.data(), base_ptrs,
+                                non_reduced_strides, dims.values);
+    for (size_t iop = 0; iop < noperands; ++iop) {
+      reduce_iter.operands_[iop].data = data_ptrs[iop];
     }
-  }
-  else {
-    int dim = find_split_dim(*this);
-    int64_t cols = shape[dim];
-    at::parallel_for(0, cols, 1, [&](int64_t begin, int64_t end) {
-      if (begin == end) {
-        return;
-      }
 
-      TensorIterator sub_iter(*this);
-
-      sub_iter.narrow(dim, begin, end - begin);
-      // On some broken setups, `#ifdef _OPENMP` is true,
-      // and `get_num_threads` returns > 1, but
-      // `#pragma omp parallel` is ignored.
-      // There is no API to check for this, so we need to explicitly
-      // stop trying to parallelize if we've already gotten here.
-      //
-      // (If we are on one of those broken setups, we will
-      //  only have one thread here, and end - begin == cols.)
-      sub_iter.foreach_reduced_elt(loop, false);
-    });
+    loop(reduce_iter);
+    dims.increment({1, 1});
   }
+}
+
+void TensorIteratorBase::foreach_reduced_elt(loop_subiter_t loop) const {
+  const auto output_numel = num_output_elements();
+  if (output_numel == 0) {
+    return;
+  }
+  if (output_numel == 1) {
+    TORCH_INTERNAL_ASSERT(ninputs() == 1);
+    TORCH_INTERNAL_ASSERT(noutputs() >= 1);
+    return loop(*this);
+  }
+
+  const auto input_numel = numel();
+  const auto grain_size = at::internal::GRAIN_SIZE / (input_numel / output_numel);
+  at::parallel_for(0, output_numel, grain_size, [&](int64_t begin, int64_t end) {
+    serial_foreach_reduced_elt(loop, {begin, end});
+  });
 }
 
 }  // namespace at
