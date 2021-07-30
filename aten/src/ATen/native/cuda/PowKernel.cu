@@ -4,6 +4,7 @@
 #include <ATen/native/DispatchStub.h>
 #include <ATen/native/TensorIterator.h>
 #include <ATen/native/Pow.h>
+#include <c10/util/Math.h>
 
 namespace at { namespace native {
 
@@ -47,7 +48,7 @@ static inline __host__ __device__ typename std::enable_if<!std::is_same<Base_typ
 #else
 template <typename Base_type, typename Exp_type>
 static inline __host__ __device__ Base_type pow_(Base_type base, Exp_type exp) {
-  return ::pow(base, exp);
+  return c10::math::pow(base, exp);
 }
 #endif
 

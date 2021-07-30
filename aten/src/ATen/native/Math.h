@@ -10,7 +10,7 @@
 #include <c10/util/BFloat16.h>
 #include <c10/util/Half.h>
 #include <c10/util/MathConstants.h>
-#include <c10/util/math_compat.h>
+#include <c10/util/Math.h>
 #include <ATen/AccumulateType.h>
 
 
@@ -183,22 +183,22 @@ C10_HOST_DEVICE static inline scalar_t zeta(scalar_t x, scalar_t q) __ubsan_igno
   }
 
   if (q <= zero) {
-    if (q == ::floor(q)) {
+    if (q == c10::math::floor(q)) {
       return std::numeric_limits<scalar_t>::infinity();
     }
-    if (x != ::floor(x)) {
+    if (x != c10::math::floor(x)) {
       return std::numeric_limits<scalar_t>::quiet_NaN();
     }
   }
 
-  s = ::pow(q, -x);
+  s = c10::math::pow(q, -x);
   a = q;
   i = 0;
   b = zero;
   while ((i < 9) || (a <= acc_t{9.0})) {
     i += 1;
     a += one;
-    b = ::pow(a, -x);
+    b = c10::math::pow(a, -x);
     s += b;
     if ((-MACHEP * s < b) && (b < MACHEP * s)) {
       return static_cast<scalar_t>(s);
@@ -215,7 +215,7 @@ C10_HOST_DEVICE static inline scalar_t zeta(scalar_t x, scalar_t q) __ubsan_igno
     b /= w;
     t = a * b / A[i];
     s = s + t;
-    t = ::fabs(t / s);
+    t = c10::math::abs(t / s);
     if (t < MACHEP) {
       return static_cast<scalar_t>(s);
     }
@@ -408,7 +408,7 @@ template <typename scalar_t, bool is_cuda=false>
 static inline C10_HOST_DEVICE scalar_t calc_polygamma(int n, scalar_t x) {
   // already blocked if n <= 1
   return ((n % 2) ? 1.0 : -1.0) *
-      ::exp(::lgamma(static_cast<scalar_t>(n) + 1.0)) *
+      c10::math::exp(c10::math::lgamma(static_cast<scalar_t>(n) + 1.0)) *
       zeta<scalar_t, is_cuda>(static_cast<scalar_t>(n + 1), x);
 }
 
@@ -1583,8 +1583,8 @@ static inline C10_HOST_DEVICE T calc_ndtri(T y0) {
     return (x * s2pi);
   }
 
-  T x = ::sqrt(T{-2.0} * ::log(y));
-  const T x0 = x - ::log(x) / x;
+  T x = c10::math::sqrt(T{-2.0} * c10::math::log(y));
+  const T x0 = x - c10::math::log(x) / x;
 
   const T z = one / x;
   T x1;
@@ -2100,10 +2100,10 @@ calc_erfcx(T x)
       return std::numeric_limits<T>::infinity();
     }
     else if (x < -6.1) {
-      return 2*exp(x*x);
+      return 2*c10::math::exp(x*x);
     }
     else {
-      return 2*exp(x*x) - erfcx_y100(400/(4-x));
+      return 2*c10::math::exp(x*x) - erfcx_y100(400/(4-x));
     }
   }
 }

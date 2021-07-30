@@ -149,6 +149,13 @@ __MATH_FUNCTIONS_DECL__ double normcdf(double x) {
   return ::normcdf(x);
 }
 
+__MATH_FUNCTIONS_DECL__ double lgamma(double x) {
+  return ::lgamma(x);
+}
+__MATH_FUNCTIONS_DECL__ float lgamma(float x) {
+  return ::lgammaf(x);
+}
+
 } // namespace compat
 } // namespace cuda
 } // namespace c10
