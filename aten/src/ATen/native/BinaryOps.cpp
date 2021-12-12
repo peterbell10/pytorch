@@ -582,24 +582,24 @@ Tensor& true_divide_(Tensor& self, const Scalar& divisor) {
 
 
 static void floor_divide_check_result(const Tensor &result) {
-    // TODO: Remove for PyTorch 1.11
-    TORCH_CHECK(
-        // !any(x < 0) is like all(x >= 0) except it accepts NaN values
-        !(at::any(result < 0).item<bool>()),
-        "torch.floor_divide: refusing to round a negative value. "
-        "In previous PyTorch versions, torch.floor_divide rounded toward 0 "
-        "(like the 'trunc' function NOT 'floor'). "
-        "This results in incorrect rounding for negative values.\n"
-        "To keep the old behavior, use torch.div(a, b, rounding_mode='trunc'), "
-        "or for actual floor division, use torch.div(a, b, rounding_mode='floor').")
-    TORCH_WARN_ONCE(
-        "floor_divide rounding will change in a future release. "
-        "In previous PyTorch versions, torch.floor_divide rounded toward 0 "
-        "(like the 'trunc' function NOT 'floor'). "
-        "This results in incorrect rounding for negative values.\n"
-        "To keep the current behavior, use torch.div(a, b, rounding_mode='trunc'), "
-        "or for actual floor division, use torch.div(a, b, rounding_mode='floor')."
-        );
+  // TODO: Remove for PyTorch 1.12
+  Tensor values = (result.is_complex()) ? at::real(result) : result;
+  TORCH_CHECK(
+      // !any(x < 0) is like all(x >= 0) except it accepts NaN values
+      !(at::any(values < 0).item<bool>()),
+      "torch.floor_divide: refusing to round a negative value. "
+      "In previous PyTorch versions, torch.floor_divide rounded toward 0 "
+      "(like the 'trunc' function NOT 'floor'). "
+      "This results in incorrect rounding for negative values.\n"
+      "To keep the old behavior, use torch.div(a, b, rounding_mode='trunc'), "
+      "or for actual floor division, use torch.div(a, b, rounding_mode='floor').");
+  TORCH_WARN_ONCE(
+      "floor_divide rounding will change in a future release. "
+      "In previous PyTorch versions, torch.floor_divide rounded toward 0 "
+      "(like the 'trunc' function NOT 'floor'). "
+      "This results in incorrect rounding for negative values.\n"
+      "To keep the current behavior, use torch.div(a, b, rounding_mode='trunc'), "
+      "or for actual floor division, use torch.div(a, b, rounding_mode='floor').");
 }
 
 Tensor& floor_divide_out(const Tensor& self, const Tensor& other, Tensor& result) {

@@ -9693,14 +9693,9 @@ op_db: List[OpInfo] = [
                     dtypes=all_types_and(torch.half, torch.bfloat16),
                     sample_inputs_func=sample_inputs_floor_divide,
                     supports_autograd=False,
-                    rhs_make_tensor_kwargs=dict(exclude_zero=True),
-                    decorators=(
-                        # FIXME: maximum does not accept scalar inputs
-                        DecorateInfo(unittest.skip("Skipped! floor_divide errors for some inputs"),
-                                     'TestBinaryUfuncs', 'test_broadcast_python_scalar'),
-                        DecorateInfo(unittest.skip("Skipped! floor_divide errors for some inputs"),
-                                     'TestBinaryUfuncs', 'test_broadcasting'),
-                    ),
+                    # TODO: Remove low=0 after floor_divide stops erroring on negative results
+                    rhs_make_tensor_kwargs=dict(exclude_zero=True, low=0),
+                    lhs_make_tensor_kwargs=dict(low=0),
                     ),
     UnaryUfuncInfo('frexp',
                    op=torch.frexp,

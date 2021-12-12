@@ -1571,9 +1571,8 @@ class TestSparse(TestCase):
         self.assertEqual(self.safeToDense(y1), expected)
         self.assertEqual(self.safeToDense(y2), expected)
 
-        y0 = x1.clone()
-        y0._values().abs_()
-        with self.assertWarnsOnceRegex(UserWarning, 'floor_divide'):
+        y0 = x1.abs()
+        with self.assertWarnsOnceRegex(UserWarning, '__floordiv__'):
             y1 = y0 // 37.5
         y2 = y0.clone()
         with self.assertWarnsOnceRegex(UserWarning, 'floor_divide'):
