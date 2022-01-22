@@ -1,7 +1,6 @@
 #define TORCH_ASSERT_ONLY_METHOD_OPERATORS
 #include <ATen/CPUGeneratorImpl.h>
 #include <ATen/Dispatch.h>
-#include <ATen/Functions.h>
 #include <ATen/Generator.h>
 #include <ATen/core/DistributionsHelper.h>
 #include <ATen/native/Distributions.h>
