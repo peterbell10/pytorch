@@ -881,7 +881,8 @@ class TestFFT(TestCase):
                 x = x.view(1, -1)
             result = []
             for xi in x:
-                ri = librosa.stft(xi.cpu().numpy(), n_fft, hop_length, win_length, window, center=center)
+                ri = librosa.stft(xi.cpu().numpy(), n_fft=n_fft, hop_length=hop_length,
+                                  win_length=win_length, window=window, center=center)
                 result.append(torch.from_numpy(np.stack([ri.real, ri.imag], -1)))
             result = torch.stack(result, 0)
             if input_1d:
