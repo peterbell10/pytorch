@@ -31,6 +31,10 @@ Tensor build_test_operator(const Tensor &self) {
   return self;
 }
 
+Tensor build_test_operator(const Tensor &self, int64_t) {
+  return self;
+}
+
 Tensor build_test_method_operator(const Tensor &self) {
   return self;
 }

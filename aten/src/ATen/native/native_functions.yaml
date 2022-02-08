@@ -11237,5 +11237,8 @@
 - func: build_test_operator(Tensor self) -> Tensor
   variants: function
 
+- func: build_test_operator.2(Tensor self, int a) -> Tensor
+  variants: function
+
 - func: build_test_method_operator(Tensor self) -> Tensor
   variants: method
