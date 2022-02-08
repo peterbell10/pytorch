@@ -19,6 +19,8 @@
 #include <ATen/core/QuantizerBase.h>
 #include <ATen/core/TensorAccessor.h>
 
+#include <ATen/Operators.h>
+
 namespace c10 {
 class Scalar;
 }
