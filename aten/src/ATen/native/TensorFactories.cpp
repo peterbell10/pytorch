@@ -31,6 +31,10 @@ Tensor build_test_operator(const Tensor &self) {
   return self;
 }
 
+Tensor build_test_method_operator(const Tensor &self) {
+  return self;
+}
+
 namespace {
 void window_function_checks(
     const char* function_name,
