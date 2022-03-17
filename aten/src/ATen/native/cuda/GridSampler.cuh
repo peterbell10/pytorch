@@ -1,3 +1,4 @@
+#pragma once
 #include <ATen/native/cuda/KernelUtils.cuh>
 
 namespace at { namespace native {
