@@ -1,29 +1,11 @@
 #pragma once
+#include <ATen/core/PointerTraits.h>
 
 namespace at { namespace native {
 
 // (Const)StridedRandomAccessor is a
 // (const) random access iterator defined over
 // a strided array.
-
-// The traits below are to introduce __restrict__
-// modifier on different platforms.
-
-template <typename T>
-struct DefaultPtrTraits {
-  using PtrType = T*;
-};
-
-#if (defined(_WIN32) || defined(_WIN64))
-#define RESTRICT __restrict
-#else
-#define RESTRICT __restrict__
-#endif
-
-template <typename T>
-struct RestrictPtrTraits {
-  using PtrType = T* RESTRICT;
-};
 
 template <
   typename T,

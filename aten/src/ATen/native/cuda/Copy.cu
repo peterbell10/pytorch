@@ -2,6 +2,7 @@
 #include <ATen/core/Tensor.h>
 #include <ATen/Context.h>
 #include <ATen/Dispatch.h>
+#include <ATen/TensorGeometry.h>
 #include <ATen/cuda/CachingHostAllocator.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAEvent.h>
@@ -9,6 +10,7 @@
 #include <c10/cuda/CUDAStream.h>
 #include <ATen/native/Copy.h>
 #include <ATen/native/TensorIterator.h>
+#include <ATen/native/OffsetCalcIterator.h>
 #include <ATen/native/cuda/Loops.cuh>
 
 #ifndef AT_PER_OPERATOR_HEADERS
@@ -17,6 +19,40 @@
 #include <ATen/ops/empty_like.h>
 #endif
 
+#include <ATen/cuda/cub.cuh>
+
+namespace {
+
+template <int block_size, int items_per_thread,
+          typename scalar_t, typename InputOffsetCalc>
+C10_LAUNCH_BOUNDS_1(block_size)
+__global__ void copy_to_contiguous_kernel(
+    const scalar_t *input, InputOffsetCalc offset_calc,
+    scalar_t *output, uint32_t numel) {
+  namespace cub = NO_ROCM(at_cuda_detail)::cub;
+  using Load = cub::BlockLoad<scalar_t, block_size, items_per_thread,
+                              cub::BlockLoadAlgorithm::BLOCK_LOAD_TRANSPOSE>;
+  using Store = cub::BlockLoad<scalar_t, block_size, items_per_thread,
+                              cub::BlockStoreAlgorithm::BLOCK_STORE_VECTORIZE>;
+  __shared__ union {
+    Load::TempStorage load;
+    Store::TempStorage store;
+  } tmp_storage;
+
+  const auto items_per_block = blockDim.x * items_per_thread;
+  const auto block_start = blockIdx.x * items_per_block;
+  using InIt = at::native::ConstOffsetCalcIterator<
+    scalar_t, InputOffsetCalc, uint32_t, at::native::RestrictPointerTraits>;
+  InIt iter(input, offset_calc, block_start);
+
+  const auto valid_items = std::min(numel - block_start, items_per_block);
+
+  scalar_t items[items_per_thread];
+  Load(tmp_storage.load).Load(iter, items, valid_items);
+  __syncthreads();
+  Store(tmp_storage.store).Store(output + block_start, items, valid_items);
+}
+
 namespace at {
 namespace native {
 
@@ -24,16 +60,40 @@ void neg_kernel_cuda(TensorIteratorBase &iter);
 void conj_kernel_cuda(TensorIteratorBase &iter);
 
 namespace {
+
+template <typename scalar_t>
+void launch_direct_copy_kernel(TensorIteratorBase &iter) {
+  if (!iter.is_contiguous() &&
+      geometry_is_contiguous(iter.shape, iter.strides(0)) &&
+      iter.data_ptr(0) % (4 * sizeof(scalar_t)) == 0
+    ) {
+    auto offset_calc = make_input_offset_calculator<1>(iter);
+
+    constexpr int block_size = 128;
+    constexpr int items_per_thread = 4;
+    constexpr int items_per_block = block_size * items_per_thread;
+    int grid = (iter.numel() + items_per_block - 1) / items_per_block;
+    copy_to_contiguous_kernel<block_size, items_per_thread>
+        <<<grid, block_size, 0, at::cuda::getCurrentCUDAStream()>>>(
+            reinterpret_cast<const scalar_t*>(iter.data_ptr(1)),
+            offset_calc,
+            reinterpret_cast<const scalar_t*>(iter.data_ptr(0)),
+            iter.numel());
+  } else {
+    gpu_kernel(iter, [] GPU_LAMBDA(scalar_t x) { return x; });
+  }
+}
+
 void direct_copy_kernel_cuda(TensorIteratorBase &iter) {
   ScalarType dtype = iter.dtype(0);
   if (isQIntType(dtype)) {
     AT_DISPATCH_QINT_TYPES(dtype, "copy_", [&] {
-      gpu_kernel(iter, [] GPU_LAMBDA(scalar_t x) { return x; });
+      launch_direct_copy_kernel<scalar_t>(iter);
     });
   } else {
     AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND4(
         kHalf, kBool, kBFloat16, kComplexHalf, dtype, "copy_", [&] {
-          gpu_kernel(iter, [] GPU_LAMBDA(scalar_t x) { return x; });
+          launch_direct_copy_kernel<scalar_t>(iter);
     });
   }
 }

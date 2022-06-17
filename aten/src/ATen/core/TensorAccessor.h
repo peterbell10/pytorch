@@ -8,22 +8,13 @@
 #include <stdint.h>
 #include <cstddef>
 
+#include <ATen/core/PointerTraits.h>
+
 namespace at {
 
 // The PtrTraits argument to the TensorAccessor/GenericPackedTensorAccessor
 // is used to enable the __restrict__ keyword/modifier for the data
 // passed to cuda.
-template <typename T>
-struct DefaultPtrTraits {
-  typedef T* PtrType;
-};
-
-#if defined(__CUDACC__) || defined(__HIPCC__)
-template <typename T>
-struct RestrictPtrTraits {
-  typedef T* __restrict__ PtrType;
-};
-#endif
 
 // TensorAccessorBase and TensorAccessor are used for both CPU and CUDA tensors.
 // For CUDA tensors it is used in device code (only). This means that we restrict ourselves
