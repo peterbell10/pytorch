@@ -263,6 +263,9 @@ PyObject* THPModule_has_torch_function(PyObject*, PyObject* arg) {
   } else {
     auto args = py::reinterpret_steal<py::object>(
         PySequence_Fast(arg, "expected a sequence"));
+    if (!args) {
+      throw py::error_already_set();
+    }
     result = sequence_has_torch_function(args.ptr());
   }
 
