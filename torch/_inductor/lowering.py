@@ -30,6 +30,7 @@ from .ir import (
     SqueezeView,
     TensorBox,
     View,
+    is_triton,
 )
 from .utils import ceildiv, has_torchvision_roi_align, sympy_product
 from .virtualized import ops, V
@@ -3089,6 +3090,46 @@ def mean(x, axis=None, keepdim=False, *, dtype=None):
     denom = ir.IndexingConstant(denom, x.get_dtype(), x.get_device())
     denom = ExpandView.create(denom, list(sum_result.get_size()))
     return to_dtype(div(sum_result, denom), output_dtype)
+
+
+# prod_fallback = make_fallback(aten.prod)
+
+@register_lowering([aten.prod, prims.prod])
+def prod_(x, axis=None, keepdim=False, *, dtype=None):
+    fn = make_reduction("prod", override_return_dtype=dtype)
+    return fn(x, axis=axis, keepdims=keepdim, dtype=dtype)
+
+
+# @register_lowering([aten.prod, prims.prod])
+# def prod_(x, axis=None, keepdim=False, *, dtype=None):
+#     device = x.get_device()
+#     if not ir.is_triton(device):
+#         return prod_fallback(x, axis=axis, keepdim=keepdim, dtype=dtype)
+
+#     size = x.get_size()
+#     axis = set(_validate_reduction_axis(x, axis))
+#     reduction_numel = sympy.prod([size[i] for i in axis])
+#     numel = sympy.prod(size)
+
+#     if dtype is not None:
+#         x = to_dtype(x, dtype)
+
+#     output_dtype = x.dtype
+#     if x.dtype in (torch.float16, torch.bfloat16,):
+#         x = to_dtype(x, torch.float32)
+
+
+#     # triton doesn't support reduce to single element well, so break it up
+#     hint, split = ir.Reduction.num_splits(
+#         device,
+#         dst_dtype,
+#         src_dtype,
+#         inner_fn,
+#         ranges,
+#         reduction_ranges,
+#         reduction_type,
+#         reduction_numel,
+#     )
 
 
 @register_lowering([aten.var, prims.var])

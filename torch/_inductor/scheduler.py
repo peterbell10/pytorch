@@ -747,7 +747,7 @@ class Scheduler:
                 result.append(n)
 
         for node in self.nodes:
-            for name in node.get_names():
+            for name in node.get_nmes():
                 name_to_node[name] = node
         for node in self.nodes:
             visit(node)
