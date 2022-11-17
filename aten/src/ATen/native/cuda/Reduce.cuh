@@ -102,8 +102,7 @@ struct ReduceConfig {
 
   template <typename T>
   void set_block_dimension(int64_t dim0, int64_t dim1) {
-    auto vec_size = vectorize_input ? input_vec_size : output_vec_size;
-    const int max_num_threads = mnt_wrapper<T>::MAX_NUM_THREADS / vec_size;
+    const int max_num_threads = mnt_wrapper<T>::MAX_NUM_THREADS / output_vec_size;
     int dim0_pow2 = dim0 < max_num_threads ? static_cast<int>(last_pow2(dim0)) : max_num_threads;
     int dim1_pow2 = dim1 < max_num_threads ? static_cast<int>(last_pow2(dim1)) : max_num_threads;
     block_width = std::min(dim0_pow2, int(at::cuda::warp_size()));
