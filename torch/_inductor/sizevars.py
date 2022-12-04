@@ -391,28 +391,21 @@ class SizeVarAllocator(object):
         """Convert an indexing expression back into strides"""
         strides = []
         index = self.simplify(index)
-        # remove any offset
-        index = index - sympy_subs(index, {v: sympy.Integer(0) for v in vars if v != 0})
-        for i in range(len(vars)):
-            # drop all the other dims
-            index_dim = sympy_subs(
-                index,
-                {
-                    vars[j]: sympy.Integer(0)
-                    for j in range(len(vars))
-                    if i != j and vars[j] != 0
-                },
+
+        assert len(index.free_symbols - set(vars)) == 0
+        stride_symbols = [sympy.Wild(f"stride{i}") for i in range(len(vars))]
+        offset = sympy.Wild("offset")
+        index_pattern = offset + sum(
+            idx * stride for idx, stride in zip(vars, stride_symbols)
+        )
+
+        match = index.match(index_pattern)
+        if not match:
+            raise RuntimeError(
+                f"Cannot determine stride_vars for index expression: {index}"
             )
-            v = vars[i]
-            if v == 0:
-                strides.append(sympy.Integer(0))
-            else:
-                # TODO(jansel): should we use sympy.diff here?
-                strides.append(
-                    sympy_subs(index_dim, {v: sympy.Integer(1)})
-                    - sympy_subs(index_dim, {v: sympy.Integer(0)})
-                )
-        return strides
+
+        return [match[i] for i in stride_symbols]
 
     def offset_var(self, index: Expr, vars: List[sympy.Symbol]) -> Expr:
         """Extract offset part of an indexing expression"""
