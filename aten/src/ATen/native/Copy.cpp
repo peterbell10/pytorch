@@ -19,6 +19,7 @@
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
 #else
+#include <ATen/ops/_clone_preserve_strides_native.h>
 #include <ATen/ops/_copy_from.h>
 #include <ATen/ops/copy_native.h>
 #include <ATen/ops/empty.h>

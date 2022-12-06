@@ -6032,6 +6032,12 @@
   autogen: clone.out
   tags: canonical
 
+- func: _clone_preserve_strides(Tensor self) -> Tensor
+  variants: function
+  dispatch:
+    CompositeImplicitAutograd: clone_preserve_strides
+  tags: canonical
+
 - func: positive(Tensor(a) self) -> Tensor(a)
   variants: function, method
 

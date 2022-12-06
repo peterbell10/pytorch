@@ -2673,7 +2673,8 @@ def clone_sample(sample, **kwargs):
 
     def clone_tensor(t):
         if isinstance(t, torch.Tensor):
-            return t.detach().clone().requires_grad_(t.requires_grad)
+            clone = torch._clone_preserving_strides(t.detach())
+            return clone.requires_grad_(t.requires_grad)
         else:
             return t
 
