@@ -34,6 +34,7 @@ from .ir import (
 )
 from .utils import ceildiv, has_torchvision_roi_align, sympy_product
 from .virtualized import ops, V
+import .test_ops
 
 log = logging.getLogger(__name__)
 lowerings = {}
@@ -3681,7 +3682,7 @@ def foobar(self, *args, **kwargs):
     raise NotImplementedError("Helpful for debugging")
 
 
-@register_lowering(aten._test_inductor_realize)
+@register_lowering(torch.ops._inductor_test.realize)
 def _realize(x):
     x.realize()
     return clone(x)
