@@ -5782,7 +5782,19 @@ if HAS_CUDA:
             ]
             mod = make_fx(forward)(*inps)
             compiled = compile_fx_inner(mod, inps)
-            compiled(inps)
+
+        @requires_cuda()
+        def test_backward_context(self):
+            def fn(x):
+                return x * 3
+
+            x = torch.randn(4, device="cuda", requires_grad=True)
+            gO = torch.rand_like(x)
+            opt_fn = torch.compile(fn)
+            out = opt_fn(x)
+            out.backward(gO)
+
+           compiled(inps)
 
         @requires_cuda()
         def test_input_channels_last(self):
