@@ -204,6 +204,29 @@ TORCH_IMPL_FUNC(log1p_out_mps) (const Tensor& self, const Tensor& output)
                 });
 }
 
+TORCH_IMPL_FUNC(logit_out_mps)(const Tensor& self, c10::optional<double> eps, const Tensor& output)
+{
+  TORCH_CHECK(self.scalar_type() != ScalarType::Long, "MPS does not support logit op with int64 input");
+
+  double eps = eps.value_or(-1.0);
+  Tensor input = eps >= 0 ? at::clamp(self, eps, 1.0 - eps) : self;
+
+  mps::unary_op(input, output, "logit_out_mps",
+                ^ MPSGraphTensor* (MPSGraph* mpsGraph, MPSGraphTensor* inputTensor) {
+                  // logit(t) = log(t / (1 - t))
+                  MPSGraphTensor* oneTensor = [mpsGraph constantWithScalar:1.0
+                                                                  dataType:inputTensor.dataType];
+                  MPSGraphTensor* denomTensor = [mpsGraph subtractionWithPrimaryTensor:oueTensor
+                                                                       secondaryTensor:inputTensor
+                                                                                  name:nil];
+                  MPSGraphTensor* dividedTensor = [mpsGraph divisionWithPrimaryTensor:inputTensor
+                                                                      secondaryTensor:addedTensor
+                                                                                 name:nil];
+                  return [mpsGraph logarithmWithTensor:dividedTensor
+                                                  name:nil];
+                });
+}
+
 TORCH_IMPL_FUNC(frac_out_mps) (const Tensor& self, const Tensor& output) {
   TORCH_CHECK(isFloatingType(self.scalar_type()), "frac_out_mps is only implemented for floating types");
   mps::unary_op(self, output, "frac_out_mps",

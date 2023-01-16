@@ -4503,6 +4503,19 @@ class TestNLLLoss(TestCase):
 
         helper((2, 8, 4, 5))
 
+    def test_logit(self):
+        def helper(shape, eps):
+            cpu_x = torch.randn(shape, device='cpu', dtype=torch.float, requires_grad=False)
+            x = cpu_x.detach().clone().to('mps')
+
+            log_result = torch.logit(x, eps=eps)
+            log_result_cpu = torch.logit(cpu_x, eps=eps)
+
+            self.assertEqual(log_result, log_result_cpu)
+
+        helper((2, 8, 4, 5), eps=None)
+        helper((2, 8, 4, 5), eps=1e-5)
+
     # Test concat forward
     def test_cat2(self):
 

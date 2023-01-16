@@ -1067,7 +1067,7 @@ REGISTER_OPERATOR_FUNCTOR(aten::logit, aten_logit, [](Node* n) -> SROperator {
       const auto& in0_t = p_node->Input(0).toTensor();
       const auto in1_d = p_node->Input(1).toOptional<double>();
       fastResizeToZero(out_t);
-      at::native::logit_out(in0_t, in1_d, out_t);
+      at::cpu::logit_outf(out_t, in0_t, in1_d);
       return;
     }
     at::native::resize_(out_t, in0_t.sizes(), c10::nullopt);

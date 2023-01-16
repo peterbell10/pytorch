@@ -4893,19 +4893,21 @@
 
 - func: logit(Tensor self, float? eps=None) -> Tensor
   variants: function, method
-  dispatch:
-    CPU, CUDA: logit
+  structured_delegate: logit.out
   tags: pointwise
 
 - func: logit_(Tensor(a!) self, float? eps=None) -> Tensor(a!)
   variants: function, method
-  dispatch:
-    CPU, CUDA: logit_
+  structured_delegate: logit.out
   tags: pointwise
 
 - func: logit.out(Tensor self, float? eps=None, *, Tensor(a!) out) -> Tensor(a!)
+  device_check: NoCheck   # TensorIterator
+  structured: True
+  structured_inherits: TensorIteratorBase
   dispatch:
     CPU, CUDA: logit_out
+    MPS: logit_out_mps
   tags: pointwise
 
 - func: sin(Tensor self) -> Tensor

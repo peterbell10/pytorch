@@ -237,6 +237,10 @@ TORCH_META_FUNC(polygamma)(int64_t n, const Tensor& self) {
   build_borrowing_unary_float_op(maybe_get_output(), self);
 }
 
+TORCH_META_FUNC(logit)(const Tensor& self, c10::optional<double> eps) {
+  build_borrowing_unary_float_op(maybe_get_output(), self);
+}
+
 // These are normal unary ops that preserve dtype
 #define CREATE_UNARY_META_FUNC(func)                  \
   TORCH_META_FUNC(func) (const Tensor& self) {        \
@@ -774,18 +778,9 @@ Tensor& square_out(const Tensor& self, Tensor& result) { return at::pow_out(resu
 Tensor square(const Tensor& self) { return at::pow(self, 2); }
 Tensor& square_(Tensor& self) { return self.pow_(2); }
 
-Tensor& logit_out(const Tensor& self,
-    c10::optional<double> eps,
-    Tensor& result) {
-  return unary_op_impl_float_out(
-      result, self, logit_stub, Scalar(eps ? eps.value() : -1.0));
-}
-Tensor logit(const Tensor& self, c10::optional<double> eps) {
-  return unary_op_impl_float(
-      self, logit_stub, Scalar(eps ? eps.value() : -1.0));
-}
-Tensor& logit_(Tensor& self, c10::optional<double> eps) {
-  return at::logit_out(self, self, eps);
+TORCH_IMPL_FUNC(logit_out)(const Tensor& self, c10::optional<double> eps, const Tensor& result) {
+  Scalar eps_scalar(eps.value_or(-1.0));
+  logit_stub(device_type(), *this, eps_scalar);
 }
 
 Tensor& special_logit_out(const Tensor& self, c10::optional<double> eps, Tensor& result) {
