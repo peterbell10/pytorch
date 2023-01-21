@@ -103,6 +103,32 @@ def guard_int(a):
     assert isinstance(a, int)
     return a
 
+def size_hint(a):
+    if isinstance(a, SymInt):
+        return a.node.shape_env.size_hint(a)
+    assert isinstance(a, int)
+    return a
+
+def guard_eq(left, right):
+    left = sympy.expand(left)
+    right = sympy.expand(right)
+    if left == right:
+        return left
+
+    expr = left - right
+    assert hasattr(expr, "node")
+    assert expr.node.size_hint(expr) == 0, (expr, expr.node.size_hint(expr))
+    expr.node.guard_int("", 0)
+
+    return expr.node.shape_env.simplify(left)
+
+def maybe_guard_eq(left, right):
+    if left == right:
+        return left
+    if size_hint(left - right) == 0:
+        return guard_eq(left, right)
+    return None
+
 # Drop in replacement for math.sqrt
 def sym_sqrt(a):
     if hasattr(a, '__sym_sqrt__'):

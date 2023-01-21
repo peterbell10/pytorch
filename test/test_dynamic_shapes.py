@@ -345,6 +345,35 @@ class TestPySymInt(TestCase):
         self.assertExpectedInline(str(shape_env.guards[0][0]), """Eq(s0, 2)""")
 
     @skipIfNoSympy
+    def test_reference_broadcast_guards(self):
+        shape_env = ShapeEnv()
+        x = create_symbolic_tensor("x", torch.randn(12, 4, 3), shape_env)
+        s0, s1, s2 = x.shape
+        y = torch.empty(s1 * 3, s0 // s2, s0 // s1, device="meta")
+
+        (xp, yp) = torch._refs.broadcast_tensors(x, y)
+
+        self.assertExpectedInline(str(xp.shape), """torch.Size([3*s1, s1, 3])""")
+
+        guards_str = ""
+        for g in shape_env.guards:
+            guards_str += str(g.expr)
+            guards_str += "\n"
+        self.assertExpectedInline(guards_str, """\
+Ne(s1, s2)
+Ne(s0//s1, 0)
+Ne(s0//s2, 0)
+Ne(3*s1*(s0//s1)*(s0//s2), 0)
+Ne(s0//s1, 1)
+Ne(s0//s2, 1)
+Eq(s2, s0//s1)
+Eq(s1, s0//s2)
+Eq(s0, 3*s1)
+Eq((3*s1)//s2, s1)
+Eq(3, s2)
+""")
+
+    @skipIfNoSympy
     def test_sym_int(self):
         shape_env = ShapeEnv()
         a0 = create_symint(shape_env, 5)

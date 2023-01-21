@@ -44,6 +44,8 @@ from torch._prims_common.wrappers import (
     out_wrapper,
 )
 
+from torch.fx.experimental.symbolic_shapes import maybe_guard_eq
+
 # Experimental module containing prototype Python references for existing
 #   PyTorch operations.
 
@@ -316,24 +318,28 @@ def _broadcast_shapes(*_shapes):
         assert isinstance(shape, Sequence)
 
     # Computes common shape
-    common_shape = [
-        1,
-    ] * reduce(max, (len(shape) for shape in shapes))
+    common_ndim = reduce(max, (len(shape) for shape in shapes))
+    common_shape = [1] * common_ndim
     for arg_idx, shape in enumerate(shapes):
         for idx in range(-1, -1 - len(shape), -1):
             if common_shape[idx] == 1:
-                if shape[idx] < 0:
+                if not isinstance(shape[idx], sympy.Expr) and shape[idx] < 0:
                     raise ValueError(
                         "Attempting to broadcast a dimension with negative length!"
                     )
                 common_shape[idx] = shape[idx]
-            elif shape[idx] != 1:
-                if common_shape[idx] != shape[idx]:
-                    raise RuntimeError(
-                        f"Attempting to broadcast a dimension of length {shape[idx]} at {idx}! "
-                        f"Mismatching argument at index {arg_idx} had {shape}; but expected shape "
-                        f"should be broadcastable to {common_shape}"
-                    )
+                continue
+            if shape[idx] == 1:
+                continue
+
+            size = maybe_guard_eq(shape[idx], common_shape[idx])
+            if size is None:
+                raise RuntimeError(
+                    f"Attempting to broadcast a dimension of length {shape[idx]} at {idx}! "
+                    f"Mismatching argument at index {arg_idx} had {shape}; but expected shape "
+                    f"should be broadcastable to {common_shape}"
+                )
+            common_shape[idx] = size
 
     return common_shape
 
