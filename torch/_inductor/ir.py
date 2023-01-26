@@ -103,8 +103,13 @@ def validate_ir(node_or_nodes):
         _check_tensorbox(node_or_nodes)
 
 
-def inverse_reorder(order):
+def invert_permutation(order: List[int]) -> List[int]:
     inv_order = dict(zip(order, range(len(order))))
+    return [inv_order[i] for i in range(len(order))]
+
+
+def inverse_reorder(order):
+    inv_order = invert_permutation(order)
 
     def reindex(index):
         assert len(index) == len(inv_order)
