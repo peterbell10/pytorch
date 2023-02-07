@@ -5,6 +5,7 @@ import re
 import typing
 from collections import namedtuple
 from itertools import chain
+from torch.fx.graph import magic_methods
 
 import sympy
 from sympy.printing.printer import Printer

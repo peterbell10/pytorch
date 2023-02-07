@@ -41,6 +41,7 @@ from .utils import (
     sympy_symbol,
 )
 from .virtualized import ops, V
+from .constant_propagation import PropagateConstants
 
 log = logging.getLogger(__name__)
 indent = functools.partial(textwrap.indent, prefix="  ")
@@ -4129,11 +4130,24 @@ class LoopBodyBlock:
         proxy_ops = tracer.create_proxy("placeholder", "ops", (), {})
         from .sizevars import SimplifyIndexing
 
-        with V.set_ops_handler(
+        ops_handler = PropagateConstants(
             SimplifyIndexing(CaptureIndexing(proxy_ops), self.body.var_ranges)
-        ):
+        )
+
+        with V.set_ops_handler(ops_handler):
             tracer.create_proxy("output", "output", (fn(*args),), {})
+
         self.graph = tracer.graph
+
+        # Eliminate dead code
+        mutating_ops = {"store"}
+        for node in reversed(self.graph.nodes):
+            print(node, node.op, node.target, node.users, len(node.users))
+            if node.op == "call_method" and node.target not in mutating_ops and len(node.users) == 0:
+                self.graph.erase_node(node)
+
+        self.graph.lint()
+
 
     def __call__(self):
         graph = self.graph
