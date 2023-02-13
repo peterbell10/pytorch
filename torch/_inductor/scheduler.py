@@ -6,7 +6,7 @@ import logging
 import os
 import pprint
 import textwrap
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union, Callable
 
 import sympy
 
@@ -462,30 +462,26 @@ class SchedulerNode(BaseSchedulerNode):
             return read_dep.index == write_dep.index and read_dep.size == write_dep.size
         return False
 
-    def reorder_loop(self, order: List[int]) -> Optional["SchedulerNode"]:
+    def reindex_loop(self, reindex: Callable, new_size: List[sympy.Expr]) -> "SchedulerNode":
         """Returns a new node which represents the same loop iterated in a new order
 
-        order is a list of indices into the original order, which when followed
-        produces the new order.
+        reindex is a callable taking a new index and returning the corresponding original index.
+        new_size is the new ranges of the index variables.
 
         Also note some class members are shallow copied to the new node, so do
         not modify the returned node.
 
         """
 
-        if len(self.get_ranges()[0]) != len(order):
-            return None
+        assert reindex(new_size) == self._sizes[0]
 
         def loop_reorder(ir_node: ir.ComputedBuffer):
-            reindex = ir.same_reorder(order)
-            inv_reindex = ir.inverse_reorder(order)
-
-            new_sizes = inv_reindex(self._sizes[0]), self._sizes[1]
+            new_sizes = new_size, self._sizes[1]
             (
                 iter_vars,
                 reduce_vars,
             ), var_ranges = dependencies.index_vars_no_squeeze(
-                *new_sizes, prefix="reorder"
+                *new_sizes, prefix="reindex"
             )
             assert len(reduce_vars) == 0
             body = ir.LoopBody(
@@ -504,7 +500,6 @@ class SchedulerNode(BaseSchedulerNode):
         new_node.users = self.users
         new_node.inverse_users = self.inverse_users
         new_node.recursive_predecessors = self.recursive_predecessors
-        new_node.unmet_dependencies = self.unmet_dependencies
         new_node.min_order = self.min_order
         new_node.max_order = self.max_order
         new_node.last_usage = self.last_usage
@@ -618,24 +613,88 @@ class FusedSchedulerNode(BaseSchedulerNode):
     def can_free(self):
         raise NotImplementedError
 
-    def reorder_loop(self, order: List[int]) -> Optional["FusedSchedulerNode"]:
-        ndim = len(order)
-        if any(len(n.get_ranges()[0]) != ndim for n in self.get_nodes()):
-            return None
+def reindex_uncoalesce_to(original_shape: List[sympy.Expr], target_shape: List[sympy.Expr]):
+    """
+    """
+    target_idx = 0
+    dim_offset = 0
+    size_hint = V.graph.sizevars.size_hint
+    reindex = None
+    for dim, length in enumerate(original_shape):
+        cur_size = target_shape[dim + dim_offset]
+        if length == cur_size:
+            continue
 
-        new_nodes = []
-        for n in self.get_nodes():
-            if not isinstance(n, SchedulerNode):
-                return None
+        sizes = [cur_size]
+        while size_hint(cur_size) < size_hint(length):
+            ++dim_offset
+            target_len = target_shape[dim + dim_offset]
+            cur_size *= target_len
+            sizes.append(target_len)
 
-            new_node = n.reorder_loop(order)
-            if new_node is None:
-                return None
+        assert cur_size == length, (cur_size, length, dim, original_shape, target_shape)
 
-            new_nodes.append(new_node)
+        dim_reindex = ir.reindex_split_dim(dim + dim_offset, sizes)
+        dim_offset += len(sizes) - 1
 
-        return FusedSchedulerNode(self.scheduler, new_nodes)
+        reindex = ir.maybe_fuse_reindexing(reindex, dim_reindex)
 
+    if reindex is None:
+        return lambda index: index
+    return reindex
+
+
+class ReorderedSchedulerNode:
+    def __init__(
+            self,
+            node: Union[SchedulerNode, FusedSchedulerNode],
+            order: List[int],
+            original_shape: List[int],
+    ):
+        self.node = node
+        self.order = order
+        self.original_shape = original_shape
+
+
+    @staticmethod
+    def _reorder_node(node: BaseSchedulerNode, order: List[int], shape: List[sympy.Expr]) -> BaseSchedulerNode:
+        assert len(order) == len(shape)
+        if isinstance(node, FusedSchedulerNode):
+            new_nodes = [
+                ReorderedSchedulerNode._reorder_node(n, order, shape)
+                for n in node.get_nodes()
+            ]
+            return FusedSchedulerNode(node.scheduler, new_nodes)
+
+        assert isinstance(node, SchedulerNode)
+        cur_shape = node.get_ranges()[0]
+        print(cur_shape, shape)
+        uncoalesce = (reindex_uncoalesce_to(cur_shape, shape)
+                      if cur_shape != shape else None)
+
+        reorder = ir.same_reorder(order)
+        inv_reorder = ir.inverse_reorder(order)
+        new_shape = inv_reorder(shape)
+        reindex = ir.maybe_fuse_reindex(reorder, uncoalesce)
+        return node.reindex_loop(reindex, new_shape)
+
+    @staticmethod
+    def reorder_node(
+        node: BaseSchedulerNode, order: List[int], shape: List[sympy.Expr]
+    ) -> "ReorderedSchedulerNode":
+        new_node = ReorderedSchedulerNode._reorder_node(node, order, shape)
+        wrapped = ReorderedSchedulerNode(new_node, order, shape)
+        print(f"Reordering {node} into {wrapped}")
+        return wrapped
+
+    def reapply(self, node: BaseSchedulerNode) -> "ReorderedSchedulerNode":
+        return ReorderedSchedulerNode.reorder_node(node, self.order, self.shape)
+
+    def __repr__(self):
+        return f"{type(self).__name__}(nodes={self.get_names()}, order={self.order}, original_shape={self.original_shape})"
+
+    def __getattr__(self, item):
+        return getattr(self.node, item)
 
 def pick_loop_order(stride_lengths, sizes, priority_idx=()):
     """
@@ -914,10 +973,11 @@ class Scheduler:
         """
         Mutates self.nodes to combine nodes into FusedSchedulerNodes.
         """
-        for _ in range(10):
+        for i in range(10):
             old_len = len(self.nodes)
             self.fuse_nodes_once()
             if len(self.nodes) == old_len:
+                print(f"No fusions after {i} iterations")
                 break
 
     def fuse_nodes_once(self):
@@ -938,16 +998,52 @@ class Scheduler:
         #   node = self.name_to_fused_node[node.get_first_name()]
         # will map an unfused nodes back to itself
         recent_fusions: Set[str] = set()
+        any_reordered = False
 
-        for node1, node2 in self.get_possible_fusions():
-            if node1.get_first_name() in recent_fusions:
-                node1 = self.name_to_fused_node[node1.get_first_name()]
-            if node2.get_first_name() in recent_fusions:
-                node2 = self.name_to_fused_node[node2.get_first_name()]
+        p = self.get_possible_fusions()
+
+        for node1, node2 in p:
+            nodes = (node1, node2)
+
+            def update_node(n):
+                order = None
+                name = n.get_first_name()
+                if isinstance(n, ReorderedSchedulerNode):
+
+                    order = n.order
+                    n = n.node
+
+                name = n.get_first_name()
+                if name not in recent_fusions:
+                    return n
+
+                fused_node = self.name_to_fused_node[n.get_first_name()]
+                if isinstance(n, ReorderedSchedulerNode):
+                    return n.reapply(fused_node)
+
+                return fused_node
+
+            node1 = update_node(node1)
+            if node1 is None:
+                continue
+            node2 = update_node(node2)
+            if node2 is None:
+                continue
+
+            is_reordered = (
+                    isinstance(nodes[0], ReorderedSchedulerNode) or
+                    isinstance(nodes[1], ReorderedSchedulerNode)
+            )
+            if is_reordered:
+                print(f"Attempting to fuse reordered nodes {node1.get_names()}, {node2.get_names()}")
 
             if self.can_fuse(node1, node2) and not self.will_fusion_create_cycle(
                 node1, node2
             ):
+                if is_reordered:
+                    print("Fusing reordered nodes")
+                    print(nodes[0])
+                    print(nodes[1])
                 node3 = FusedSchedulerNode.fuse(node1, node2)
                 fused_nodes.remove(self.name_to_fused_node[node1.get_first_name()])
                 fused_nodes.remove(self.name_to_fused_node[node2.get_first_name()])
@@ -995,9 +1091,11 @@ class Scheduler:
             check_all_pairs(node_grouping)
 
         if config.fusion_reorder_loops:
-            possible_fusions += self.get_reorder_fusions(
+            reorder_fusions = self.get_reorder_fusions(
                 buffer_names_grouping, ignore=set(possible_fusions)
             )
+            print(f"{len(reorder_fusions)} reorder opportunities")
+            possible_fusions += reorder_fusions
 
         if config.aggressive_fusion:
             group_grouping = collections.defaultdict(list)
@@ -1049,6 +1147,7 @@ class Scheduler:
             return None
 
         # Sanity check, if we apply the reordering to the index expression, it should be equal
+        # This may fail for non-strided index expressions
         dep2_reindexed = sympy_subs(
             dep2.index,
             {
@@ -1060,7 +1159,12 @@ class Scheduler:
             return None
 
         # Permute node2 to iterate in the same order as node1
-        return [dep2_permutation[i] for i in dep1_permutation]
+        mapping = dict(zip(dep2_permutation, dep1_permutation))
+        reorder = [mapping[i] for i in range(ndim)]
+
+        assert ir.same_reorder(reorder)(strides1) == strides2, \
+            (strides1, strides2, reorder, dep1_permutation, dep2_permutation)
+        return reorder
 
     def get_reorder_fusions(
         self,
@@ -1110,11 +1214,17 @@ class Scheduler:
                 ndim = max(node_ndim(n) for n in node1.get_nodes())
 
                 def filter_in(dep):
-                    return (
+                    if not (
                         isinstance(dep, MemoryDep)
                         and dep.name == buf_name
-                        and len(dep.size) == ndim
-                    )
+                    ):
+                        return False
+                    if len(dep.size) == ndim:
+                        return True
+                    ranges = (
+                        [n.get_ranges() for n in node1.get_nodes()] +
+                        [n.get_ranges() for n in node2.get_nodes()])
+                    return False
 
                 node1_buf_deps = [
                     dep
@@ -1133,28 +1243,33 @@ class Scheduler:
 
                     reorder = self.pick_dependency_reorder(dep1, dep2)
                     if reorder is not None:
-                        reorder_opportunities[(node1, node2)].add(tuple(reorder))
+                        assert reorder != list(range(len(reorder))), (reorder, dep1, dep2)
+                        reorder_opportunities[(node1, node2)].add((tuple(reorder), dep1.size))
 
         # Step 2: Construct new nodes with the reordering and comprehesively
         # test if they can be fused with self.can_fuse
         for (node1, node2), orders in reorder_opportunities.items():
-            for order in orders:
+            for order, size in orders:
                 # Prefer to reorder pointwise ops, or node2 if both match
                 reorder_node1 = node2.is_reduction() and not node1.is_reduction()
                 if reorder_node1:
                     assert isinstance(node1, (SchedulerNode, FusedSchedulerNode))
-                    new_node = node1.reorder_loop(ir.invert_permutation(order))
+                    inv_order = ir.invert_permutation(order)
+                    new_node = ReorderedSchedulerNode.reorder_node(node1, inv_order, list(size))
                     node_pair = (new_node, node2)
                 else:
                     assert isinstance(node2, (SchedulerNode, FusedSchedulerNode))
-                    new_node = node2.reorder_loop(order)
+                    old_size = ir.same_reorder(order)(size)
+                    new_node = ReorderedSchedulerNode.reorder_node(node2, order, old_size)
                     node_pair = (node1, new_node)
 
-                if new_node is None:
-                    continue
-
                 if self.can_fuse(*node_pair):
+                    print(f"Possible reordering {node1} {node2} {order}")
                     possible_fusions.add(node_pair)
+                else:
+                    print(f"Cannot fuse after reordering {node1} {node2} {order}")
+                    print(f"{node_pair[0]}")
+                    print(f"{node_pair[1]}")
 
         return possible_fusions
 
@@ -1208,6 +1323,13 @@ class Scheduler:
         device = node1.get_device()
         if device != node2.get_device():
             return False  # wrong device
+
+        # if (
+        #         isinstance(node1, ReorderedSchedulerNode) or
+        #         isinstance(node2, ReorderedSchedulerNode)
+        # ):
+        #     import pdb
+        #     pdb.set_trace()
 
         no_shared_data = self.score_fusion_memory(node1, node2) == 0
         if no_shared_data and (

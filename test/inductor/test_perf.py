@@ -283,8 +283,8 @@ class FusionTests(TestCase):
         def f(a):
             return torch.softmax(a, dim=0)
 
-        inp = (T(10, 10),)
-        self.assertExpectedInline(count_numel(f, *inp), """200""")
+        inp = (T(10, 20),)
+        self.assertExpectedInline(count_numel(f, *inp), """440""")
 
     def test_layer_norm(self):
         # TODO: Suboptimal! We shouldn't need to save normalization stats.

@@ -103,6 +103,21 @@ def validate_ir(node_or_nodes):
         _check_tensorbox(node_or_nodes)
 
 
+def reindex_split_dim(dim: int, sizes: List[sympy.Expr]) -> Tuple[Callable, Callable]:
+
+    def reindex(index):
+
+        unified_dim = index[dim]
+        stride = 1
+        for l, i in enumerate(sizes):
+            unified_dim += index[dim + i] * stride
+            stride *= l
+
+        return index[:dim] + [unified_dim] + index[dim + len(sizes):]
+
+    return reindex
+
+
 def invert_permutation(order: List[int]) -> List[int]:
     inv_order = dict(zip(order, range(len(order))))
     return [inv_order[i] for i in range(len(order))]
@@ -131,6 +146,14 @@ def fuse_reindexing(reindex1, reindex2):
         return reindex1(reindex2(index))
 
     return reindex
+
+
+def maybe_fuse_reindex(reindex1, reindex2):
+    if reindex1 is None:
+        return reindex2
+    if reindex2 is None:
+        return reindex1
+    return fuse_reindexing(reindex1, reindex2)
 
 
 def stride_order2fill_order(order):
