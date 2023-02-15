@@ -122,7 +122,9 @@ class BaseSchedulerNode:
 
     def set_read_writes(self, rw: dependencies.ReadWrites):
         self.read_writes: dependencies.ReadWrites = rw
+        self._coalesced_read_writes = rw.coalesce_dims()
         self.unmet_dependencies = self.read_writes.reads
+        self._coalesced_unmet_dependencies = self._coalesced_read_writes.reads
         self.prune_deps()
 
     def used_buffer_names(self) -> Set[str]:
@@ -132,11 +134,14 @@ class BaseSchedulerNode:
         }
 
     def prune_deps(self):
-        self.unmet_dependencies = {
-            dep
-            for dep in self.unmet_dependencies
-            if dep.name not in self.scheduler.available_buffer_names
-        }
+        def _prune(deps):
+            return {
+                dep for dep in deps
+                if dep.name not in self.scheduler.available_buffer_names
+            }
+
+        self.unmet_dependencies = _prune(self.unmet_dependencies)
+        self._coalesced_unmet_dependencies = _prune(self._coalesced_unmet_dependencies)
 
     def prune_redundant_deps(self, name_to_fused_node):
         """
@@ -167,7 +172,6 @@ class BaseSchedulerNode:
                 return False
 
         deps_to_prune = {dep for dep in self.unmet_dependencies if should_prune(dep)}
-        self.unmet_dependencies = self.unmet_dependencies - deps_to_prune
         self.set_read_writes(self.read_writes.remove_reads(deps_to_prune))
 
     def get_name(self) -> str:
@@ -340,9 +344,11 @@ class SchedulerNode(BaseSchedulerNode):
         if self.is_reduction():
             # reduction has last (reduced) dim in its sizes, and some
             # downstream dependencies get confused by it
-            self.read_writes.writes = self.read_writes.writes | {
+            new_read_writes = dependencies.ReadWrites(self.read_writes)
+            new_read_writes.writes = self.read_writes.writes | {
                 w.strip_last_size() for w in self.read_writes.writes
             }
+            self.set_read_writes(new_read_writes)
             # reduction not on the last dim swaps the sizes, and downstream
             # dependencies expect unswapped
             # TODO swapping sizes doesn't work, leads to
@@ -458,12 +464,12 @@ class FusedSchedulerNode(BaseSchedulerNode):
         )
         names = set(self.get_names())
         self.unmet_dependencies = {
-            dep
-            for dep in functools.reduce(
-                set.union, [x.unmet_dependencies for x in snodes]
-            )
+            dep for dep in self.unmet_dependencies
             if dep.name not in names
         } - self.read_writes.writes
+        self._coalesced_unmet_dependencies = (
+            self._coalesced_unmet_dependencies - self._coalesced_read_writes.writes
+        )
         self.min_order = min([x.min_order for x in self.snodes])
         self.max_order = max([x.max_order for x in self.snodes])
 
@@ -966,8 +972,8 @@ class Scheduler:
         node1_names = node1.get_names()
         computed_deps = set()
 
-        for rd in node2.unmet_dependencies:
-            for cd in node1.read_writes.writes:
+        for rd in node2._coalesced_unmet_dependencies:
+            for cd in node1._coalesced_read_writes.writes:
                 # StarDep doesn't match MemoryDep, different indices don't match
                 # However, broadcasting sometimes strips dimensions, and if that's the case
                 # we still can match unmet dep
@@ -1018,9 +1024,11 @@ class Scheduler:
         """
         The first term in our fusion score that estimates number of saved memory operations.
         """
-        common_memory_deps = (node1.read_writes.reads | node1.read_writes.writes) & (
-            node2.read_writes.reads | node2.read_writes.writes
-        )
+        def canonicalized_deps(node):
+            rw = node._coalesced_read_writes
+            return rw.read | rw.write
+
+        common_memory_deps = canonicalized_deps(node1) & canonicalized_deps(node2)
         return sum(dep.numbytes_hint() for dep in common_memory_deps)
 
     def score_fusion_key(self, nodes):

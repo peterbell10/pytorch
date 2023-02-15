@@ -32,6 +32,46 @@ class MemoryDep(typing.NamedTuple):
         size = (*self.size, *[x for x in extra_sizes if x != 1])
         return MemoryDep(self.name, self.index, size)
 
+    def coalesce_dims(self):
+        """This coalesces dimensions in the indexing formula without changing iteration
+        order. The resulting index has the minimum dimensions required to
+        represent that pattern of iteration.
+
+        """
+        c = canonicalization_prefix()
+        index_vars = [sympy_symbol(c + str(i)) for i in range(len(self.size))]
+
+        index = self.index
+        sizes = list(self.size)
+        strides = V.graph.sizesvars.stride_vars(index, index_vars)
+
+        i = 0
+        while i + 1 < len(stride):
+            if strides[i] != strides[i + 1] * sizes[i + 1]:
+                i += 1
+                continue
+
+            va = index_vars[i]
+            vb = index_vars[i + 1]
+            expr1 = sympy_subs(index, {va: vb * sizes[i], vb: 0})
+            expr2 = sympy_subs(index, {va: 0})
+            if expr1 != expr2:
+                i += 1
+                continue
+
+            substitutions = {
+                index_vars[i]: 0
+                **{index_vars[j]: index_vars[j-1] for j in range(i + 1, len(sizes))}
+            }
+            index = sympy_subs(index, substitutions)
+            sizes[i] *= sizes[i + 1]
+            strides[i] = strides[i + 1]
+            del stride[i + 1]
+            del size[i + 1]
+
+        return MemoryDep(self.name, index, size)
+
+
     def maybe_swap_sizes(self) -> "MemoryDep":
         # swap only in simple cases where index is trivial and
         # there are just 2 sizes
@@ -151,6 +191,18 @@ class ReadWrites:
     index_exprs: Set[IndexExprDep]
     range_vars: Optional[List[sympy.Expr]] = None
     var_ranges: Optional[VarRanges] = None
+
+    def coalesce_dims(self) -> "ReadWrites":
+        def _coalesce(dep):
+            return (dep.coalesce_dims()
+                    if isinstance(dep, MemoryDep) else dep)
+        return ReadWrites(
+            {_coalesce(dep) for dep in self.reads},
+            {_coalesce(dep) for dep in self.writes},
+            self.index_exprs,
+            self.range_vars,
+            self.var_ranges,
+        )
 
     def rename(self, renames: typing.Dict[str, str]) -> "ReadWrites":
         return ReadWrites(
