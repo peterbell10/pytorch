@@ -11,9 +11,7 @@ namespace cuda {
 
 void c10_cuda_check_implementation(
     const int32_t err,
-    const char* filename,
-    const char* function_name,
-    const int line_number,
+    const SourceLocation location,
     const bool include_device_assertions) {
   const auto cuda_error = static_cast<cudaError_t>(err);
   const auto cuda_kernel_failure = include_device_assertions
@@ -41,7 +39,7 @@ void c10_cuda_check_implementation(
   }
 #endif
 
-  TORCH_CHECK(false, check_message);
+  throw c10::CUDAError(location, check_message);
 }
 
 } // namespace cuda

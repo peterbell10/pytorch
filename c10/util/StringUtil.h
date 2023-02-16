@@ -134,6 +134,11 @@ struct C10_API SourceLocation {
   uint32_t line;
 };
 
+#define C10_CURRENT_SOURCE_LOCATION()                   \
+  ::c10::SourceLocation {                               \
+    __func__, __FILE__, static_cast<uint32_t>(__LINE__) \
+  }
+
 std::ostream& operator<<(std::ostream& out, const SourceLocation& loc);
 
 // unix isprint but insensitive to locale

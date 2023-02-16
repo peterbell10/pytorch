@@ -297,8 +297,7 @@ C10_API std::string GetExceptionString(const std::exception& e);
 // is used inside a lambda the __func__ macro expands to operator(), which isn't
 // very useful, but hard to fix in a macro so suppressing the warning.
 #define C10_THROW_ERROR(err_type, msg) \
-  throw ::c10::err_type(               \
-      {__func__, __FILE__, static_cast<uint32_t>(__LINE__)}, msg)
+  throw ::c10::err_type(C10_CURRENT_SOURCE_LOCATION(), msg);
 
 // Private helper macro for workaround MSVC misexpansion of nested macro
 // invocations involving __VA_ARGS__.  See
