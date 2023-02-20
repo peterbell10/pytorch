@@ -13,6 +13,7 @@
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
 #else
+#include <ATen/ops/_assert_async.h>
 #include <ATen/ops/_cufft_clear_plan_cache_native.h>
 #include <ATen/ops/_cufft_get_plan_cache_max_size_native.h>
 #include <ATen/ops/_cufft_get_plan_cache_size_native.h>
@@ -1150,12 +1151,8 @@ Tensor istft(const Tensor& self, const int64_t n_fft, const optional<int64_t> ho
 
   y = y.slice(1, start, end, 1);
   window_envelop = window_envelop.slice(1, start, end, 1);
-  const auto window_envelop_lowest = window_envelop.abs().min().lt(1e-11);
-  if (at::is_scalar_tensor_true(window_envelop_lowest)) {
-    std::ostringstream ss;
-    REPR(ss) << "window overlap add min: " << window_envelop_lowest;
-    AT_ERROR(ss.str());
-  }
+  const auto nola_condition = window_envelop.abs().min().ge(1e-11);
+  at::_assert_async(nola_condition, "Window failed non-zero overlap add (NOLA) check");
 
   y = (y / window_envelop);  // size: (channel, expected_output_signal_len)
   if (input_dim == 3) {

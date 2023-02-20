@@ -170,6 +170,11 @@
     CPU: _assert_async_cpu
     CUDA: _assert_async_cuda
 
+- func: _assert_async.message(Tensor condition, str message) -> ()
+  variants: function
+  dispatch:
+    CPU: _assert_async_cpu
+    CUDA: _assert_async_cuda
 
 - func: _assert_tensor_metadata(Tensor a, int[]? size=None, int[]? stride=None, ScalarType? dtype=None) -> ()
 

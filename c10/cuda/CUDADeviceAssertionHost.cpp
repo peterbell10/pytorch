@@ -146,6 +146,9 @@ std::string c10_retrieve_device_side_assertion_info() {
       const auto& self = assertion_data_for_device.assertions[i];
       const auto& launch_info = launch_infos[self.caller % launch_infos.size()];
       oss << "Assertion failure " << i << std::endl;
+      if (launch_info.addtitional_message.size() > 0) {
+        oss << "  " << launch_info.additional_message << std::endl;
+      }
       oss << "  GPU assertion failure message = " << self.assertion_msg
           << std::endl;
       oss << "  File containing assertion = " << self.filename << ":"
@@ -212,7 +215,8 @@ uint32_t CUDAKernelLaunchRegistry::insert(
     const char* launch_function,
     const uint32_t launch_linenum,
     const char* kernel_name,
-    const int32_t stream_id) {
+    const int32_t stream_id,
+    const c10::string_view additional_message) {
 #ifdef TORCH_USE_CUDA_DSA
   if (!enabled_at_runtime) {
     return 0;
@@ -230,6 +234,7 @@ uint32_t CUDAKernelLaunchRegistry::insert(
       launch_function,
       launch_linenum,
       backtrace,
+      additional_message,
       kernel_name,
       dsa_get_device_id(),
       stream_id,

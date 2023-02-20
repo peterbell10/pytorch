@@ -1,6 +1,7 @@
 #pragma once
 
 #include <c10/cuda/CUDAMacros.h>
+#include <c10/util/string_view.h>
 
 #include <memory>
 #include <mutex>
@@ -61,6 +62,8 @@ struct CUDAKernelLaunchInfo {
   /// Backtrace of where the kernel was launched from, only populated if
   /// CUDAKernelLaunchRegistry::gather_launch_stacktrace is True
   std::string launch_stacktrace;
+  /// Additional message provided during launch
+  std::string additional_message;
   /// Kernel that was launched
   const char* kernel_name;
   /// Device the kernel was launched on
@@ -112,7 +115,8 @@ class C10_CUDA_API CUDAKernelLaunchRegistry {
       const char* launch_function,
       const uint32_t launch_linenum,
       const char* kernel_name,
-      const int32_t stream_id);
+      const int32_t stream_id,
+      const c10::string_view additional_message);
   /// Get copies of the kernel launch registry and each device's assertion
   /// failure buffer so they can be inspected without raising race conditions
   std::

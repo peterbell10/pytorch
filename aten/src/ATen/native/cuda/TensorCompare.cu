@@ -5,6 +5,8 @@
 #include <ATen/native/TensorCompare.h>
 #include <ATen/native/cuda/Loops.cuh>
 #include <c10/core/Scalar.h>
+#include <c10/cuda/CUDADeviceAssertion.h>
+#include <c10/cuda/CUDADeviceAssertionHost.h>
 
 
 namespace at::native {
@@ -102,27 +104,24 @@ REGISTER_DISPATCH(clamp_min_scalar_stub, &clamp_min_scalar_kernel_impl);
 REGISTER_DISPATCH(clamp_max_scalar_stub, &clamp_max_scalar_kernel_impl);
 
 template <typename scalar_t>
-__global__ void _assert_async_cuda_kernel(scalar_t* input) {
-  CUDA_KERNEL_ASSERT(input[0] != 0);
+__global__ void _assert_async_cuda_kernel(scalar_t* input, TORCH_DSA_KERNEL_ARGS) {
+  CUDA_KERNEL_ASSERT2(input[0] != scalar_t(0));
 }
 
-__global__ void _assert_async_cuda_kernel(c10::complex<float>* input) {
-  CUDA_KERNEL_ASSERT(input[0] != c10::complex<float>(0, 0));
-}
-__global__ void _assert_async_cuda_kernel(c10::complex<double>* input) {
-  CUDA_KERNEL_ASSERT(input[0] != c10::complex<double>(0, 0));
-}
-
-void _assert_async_cuda(const Tensor& self_tensor) {
+void _assert_async_cuda(const Tensor& self_tensor, c10::string_view message) {
   const TensorBase &self = get_tensor_base(self_tensor);
   auto n = self.numel();
   TORCH_CHECK(n != 0, "Boolean value of Tensor with no values is ambiguous");
   TORCH_CHECK(n < 2, "Boolean value of Tensor with more than one value is ambiguous");
   auto stream = at::cuda::getCurrentCUDAStream();
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND3(at::ScalarType::Half, at::ScalarType::Bool, at::ScalarType::BFloat16, self.scalar_type(), "_assert_async_cuda", [&] {
-    _assert_async_cuda_kernel<<<1, 1, 0, stream>>>(self.data_ptr<scalar_t>());
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    TORCH_DSA_KERNEL_LAUNCH_MESSAGE(
+        message, _assert_async_cuda_kernel, 1, 1, 0, stream, self.data_ptr<scalar_t>());
   });
+}
+
+void _assert_async_cuda(const Tensor& self_tensor) {
+  return _assert_async_cuda(self_tensor, "");
 }
 
 } // namespace at::native
