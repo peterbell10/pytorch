@@ -247,6 +247,20 @@ struct AbsMaxOps {
 #endif
 };
 
+template<typename acc_t>
+struct NormTwoHelper {
+  template<typename scalar_t>
+  static inline C10_DEVICE acc_t norm(scalar_t data) {
+    auto x = static_cast<acc_t>(data);
+    return x * x;
+  }
+
+  template<typename scalar_t>
+  static inline C10_DEVICE acc_t norm(c10::complex<scalar_t> data) {
+    return norm(data.real()) + norm(data.imag());
+  }
+};
+
 // This accumulator template is used to calculate the norm of the absolute value
 // of a set of numbers.
 // `scalar_t` is the type of the input and `acc_t` is the type of the accumulated
@@ -256,7 +270,12 @@ struct NormOps {
   acc_t norm_;
 
   inline C10_DEVICE acc_t reduce(acc_t acc, scalar_t data, int64_t /*idx*/) const {
-    return acc + compat_pow(static_cast<acc_t>(std::abs(data)), norm_);
+    if constexpr (c10::is_complex<scalar_t>::value) {
+      auto norm2 = NormTwoHelper<acc_t>::template norm(data);
+      return acc + compat_pow(norm2, norm_ * acc_t(0.5));
+    } else {
+      return acc + compat_pow(static_cast<acc_t>(std::abs(data)), norm_);
+    }
   }
 
   inline C10_DEVICE acc_t combine(acc_t a, acc_t b) const {
@@ -341,24 +360,6 @@ struct NormOneOps {
 };
 
 
-template<typename acc_t>
-struct AbsSwitch {};
-
-template<typename scalar_t, typename acc_t>
-inline C10_DEVICE acc_t abs_if_complex(scalar_t data, AbsSwitch<acc_t>) {
-  return static_cast<acc_t>(data);
-}
-
-template<typename scalar_t, typename acc_t>
-inline C10_DEVICE acc_t abs_if_complex(std::complex<scalar_t> data, AbsSwitch<acc_t>) {
-  return static_cast<acc_t>(std::abs(data));
-}
-
-template<typename scalar_t, typename acc_t>
-inline C10_DEVICE acc_t abs_if_complex(c10::complex<scalar_t> data, AbsSwitch<acc_t>) {
-  return static_cast<acc_t>(std::abs(data));
-}
-
 // This accumulator template is used to calculate the order two norm of the
 // absolute value of a set of numbers.
 // `scalar_t` is the type of the input and `acc_t` is the type of the accumulated
@@ -366,8 +367,7 @@ inline C10_DEVICE acc_t abs_if_complex(c10::complex<scalar_t> data, AbsSwitch<ac
 template <typename scalar_t, typename acc_t = scalar_t, typename out_t = acc_t>
 struct NormTwoOps {
   inline C10_DEVICE acc_t reduce(acc_t acc, scalar_t data, int64_t /*idx*/) const {
-    acc_t data_ = abs_if_complex(data, AbsSwitch<acc_t>());
-    return acc + data_ * data_;
+    return acc + NormTwoHelper<acc_t>::template norm(data);
   }
 
   inline C10_DEVICE acc_t combine(acc_t a, acc_t b) const {
