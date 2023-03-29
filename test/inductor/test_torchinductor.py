@@ -76,6 +76,7 @@ from torch._inductor.utils import has_torchvision_roi_align, timed
 from torch.fx.experimental.symbolic_shapes import FloorDiv
 
 from torch.testing._internal.inductor_utils import HAS_CPU, HAS_CUDA
+from torch.testing._internal.common_utils import slowTest
 
 HAS_MULTIGPU = HAS_CUDA and torch.cuda.device_count() >= 2
 HAS_AVX2 = "fbgemm" in torch.backends.quantized.supported_engines
@@ -1684,7 +1685,7 @@ class CommonTemplate:
                 (torch.randn(8, 12, 512, 512),),
             )
 
-    @slow()
+    @slowTest
     def test_conv_bn_fuse(self):
         # For gpu path, there is an accuracy issue
         if self.device == "cuda":
@@ -1924,7 +1925,7 @@ class CommonTemplate:
                 m_opt(x)
                 self.assertEqual(m(x), m_opt(x))
 
-    @slow()
+    @slowTest
     def test_conv2d_unary(self):
         # For gpu path, there is an accuracy issue
         # see https://github.com/pytorch/pytorch/issues/87745
@@ -2000,7 +2001,7 @@ class CommonTemplate:
                     (v,),
                 )
 
-    @slow()
+    @slowTest
     def test_conv2d_binary(self):
         # For gpu path, there is an accuracy issue
         # see https://github.com/pytorch/pytorch/issues/87745
@@ -2228,7 +2229,7 @@ class CommonTemplate:
                 (v,),
             )
 
-    @slow()
+    @slowTest
     def test_conv_transpose2d_unary(self):
         if self.device == "cuda":
             raise unittest.SkipTest("only support cpu conv_transpose2d unary test")
@@ -6282,7 +6283,7 @@ if HAS_CPU and not torch.backends.mps.is_available():
                     assert same(fn(x)[0], compiled([x])[0], equal_nan=True)
                     assert metrics.generated_cpp_vec_kernel_count == 1
 
-        @slow()
+        @slowTest
         @unittest.skipIf(
             not codecache.valid_vec_isa_list(), "Does not support vectorization"
         )
@@ -6892,7 +6893,7 @@ if HAS_CPU and not torch.backends.mps.is_available():
                     if simdlen != 1:
                         assert metrics.generated_cpp_vec_kernel_count == 1
 
-        @slow()
+        @slowTest
         @unittest.skipIf(
             not codecache.valid_vec_isa_list(), "Does not support vectorization"
         )
