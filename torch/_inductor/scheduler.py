@@ -1335,9 +1335,11 @@ class Scheduler:
         if no_shared_data and (
             not config.aggressive_fusion or node1.is_reduction() or node2.is_reduction()
         ):
+            log.info(f"Missed fusion of {node1} and {node2}: no shared data")
             return False  # heuristic not needed for correctness
 
         if len(node1.get_nodes()) + len(node2.get_nodes()) > config.max_fusion_size:
+            log.info(f"Missed fusion of {node1} and {node2}: max fusion size")
             return False  # heuristic not needed for correctness
 
         if node1.get_names() & node2.recursive_predecessors:
@@ -1379,9 +1381,11 @@ class Scheduler:
             # Examples here include:
             #   - MemoryDep("foo", x) != MemoryDep("foo", x + 1)
             #   - MemoryDep("foo", x) != StarDep("foo")
+            log.info(f"Missed fusion of {node1} and {node2} [vertical]: uncomputed dep")
             return False
         for name in remaining_deps:
             if node1_names & self.name_to_fused_node[name].recursive_predecessors:
+                log.info(f"Missed fusion of {node1} and {node2} [vertical]: creates dep cycle")
                 return False
         return True
 
