@@ -5,20 +5,21 @@
 #include <ATen/native/DispatchStub.h>
 #include <ATen/native/TensorIterator.h>
 #include <ATen/native/UnaryOps.h>
+#include <ATen/native/cuda/JitLoops.cuh>
 #include <ATen/native/cuda/Loops.cuh>
 #include <ATen/native/cuda/Math.cuh>
 #include <limits>
 
 namespace at::native {
 
-CONSTEXPR_EXCEPT_WIN_CUDA char acosh_name[] = "acosh";
+CONSTEXPR_EXCEPT_WIN_CUDA char acosh_name[] = "acosh_impl";
 void acosh_kernel_cuda(TensorIteratorBase& iter) {
   auto common_dtype = iter.common_dtype();
   if(at::isComplexType(common_dtype)) {
-#if AT_USE_JITERATOR
+#if AT_USE_JITERATOR()
   static const auto acosh_string = jiterator_stringify(
     template <typename T>
-    T acosh(T a) {
+    T acosh_impl(T a) {
         return std::acosh(a);
     }
   );
