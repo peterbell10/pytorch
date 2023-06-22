@@ -171,6 +171,34 @@ class TestMisc(JitTestCase):
         torch.index_put_(input1, [index1], value1, accumulate=False)
         self.assertEqual(input, input1)
 
+    def test_unsafe_hacked_twin(self):
+
+        def gen_data():
+            with freeze_rng_state():
+                return torch.randn(10), torch.randint(10, (20,)), torch.randn(20)
+
+        input, index, value, = gen_data()
+        input1, index1, value1, = gen_data()
+        out1 = torch.ops.aten._unsafe_index_put.hacked_twin(input, [index], value, accumulate=False)
+        out2 = torch.index_put(input1, [index1], value1, accumulate=False)
+        self.assertEqual(out1, out2)
+
+        torch.ops.aten._unsafe_index.hacked_twin(input, [index], value, accumulate=False)
+        torch.index_put(input1, [index1], value1, accumulate=False)
+        self.assertEqual(input, input1)
+
+        def fn(input, index, value):
+            return torch.ops.aten._unsafe_index_put(input, [index], value, accumulate=False)
+
+        input2, index2, value2 = gen_data()
+        sfn = torch.jit.script(fn)
+        expect = fn(input2.clone(), index2, value2)
+        actual = sfn(input2.clone(), index2, value2)
+        self.assertEqual(expect, actual)
+
+
+
+
     def test_export_opnames_interface(self):
 
         @torch.jit.interface
