@@ -256,11 +256,15 @@ class TritonOverrides(OpOverrides):
     def libdevice_sin(x):
         return f"tl.math.sin({x})"
 
-    @staticmethod
-    def index_expr(expr, dtype):
+    @classmethod
+    def index_expr(cls, expr, dtype):
         index_str, mask_vars, mask, expand_str = V.kernel.indexing(expr)
         var = V.kernel.cse.generate(V.kernel.compute, index_str)
         var.mask_vars = mask_vars
+
+        if V.kernel.index_dtype != triton_compute_type(dtype):
+            var = V.kernel.cse.generate(V.kernel.compute, cls.to_dtype(var, dtype))
+            var.mask_vars = mask_vars
         return var
 
     @staticmethod
