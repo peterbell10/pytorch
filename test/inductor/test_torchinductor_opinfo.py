@@ -412,13 +412,16 @@ def get_skips_and_xfails(from_dict, xfails=True):
 # Note: if you get a "AssertionError: Couldn't find OpInfo for ..." error for an OpInfo you are sure
 # exists, you might be trying to use a test variant and you need to replace, for example,
 # "max.reduction_no_dim" with ("max", "reduction_no_dim") as the key of one of these dictionaries
-test_skips_or_fails = (
-    get_skips_and_xfails(inductor_skips, xfails=False)
-    | get_skips_and_xfails(inductor_expected_failures_single_sample, xfails=True)
-    | get_skips_and_xfails(
-        inductor_gradient_expected_failures_single_sample, xfails=True
+if COLLECT_EXPECT:
+    test_skips_or_fails = get_skips_and_xfails(inductor_skips, xfails=False)
+else:
+    test_skips_or_fails = (
+        get_skips_and_xfails(inductor_skips, xfails=False)
+        | get_skips_and_xfails(inductor_expected_failures_single_sample, xfails=True)
+        | get_skips_and_xfails(
+            inductor_gradient_expected_failures_single_sample, xfails=True
+        )
     )
-)
 
 
 def wrapper_set_seed(op, *args, **kwargs):
@@ -664,12 +667,6 @@ class TestInductorOpInfo(TestCase):
         # with open("test_output.txt", "a") as f:
         #     print(f"SUCCEEDED OP {op_name} on {device_type} with {dtype}", flush=True, file=f)
         seen_succeeded[device_type].setdefault(op_name, set()).add(dtype)
-
-        if test_expect is ExpectedTestResult.XFAILURE and not COLLECT_EXPECT:
-            if FAIL_ON_SUCCESS:
-                raise RuntimeError(
-                    f"unexpected success {op_name}, {dtype}, {device_type}"
-                )
 
 
 instantiate_device_type_tests(TestInductorOpInfo, globals())
