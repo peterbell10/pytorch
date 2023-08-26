@@ -1930,6 +1930,33 @@ class SliceView(View):
         return SliceView(x, size=new_size, reindex=reindex)
 
 
+@dataclass
+class DtypeView(BaseView):
+    dtype: torch.dtype
+
+    def make_loader(self):
+        inner = self.data.make_loader()
+        dtype = self.dtype
+
+        def loader(idx):
+            x = inner(idx)
+            return ops.to_dtype_bitcast(x, dtype)
+
+        return loader
+
+
+    def get_dtype(self):
+        return self.dtype
+
+    @classmethod
+    def create(cls, x, dtype) -> Optional[TensorBox]:
+        original_dtype = x.get_dtype()
+        assert original_dtype.element_size == dtype.element_size,\
+            "Inductor's view.dtype only supports types with the same bitwidth"
+
+        return TensorBox.create(DtypeView(x, dtype))
+
+
 class BaseConstant(IRNode):
     def get_size(self):
         return ()

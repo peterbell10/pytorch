@@ -509,32 +509,13 @@ def _convert_element_type(x: TensorBox, dtype: torch.dtype):
     return to_dtype(x, dtype, copy=True)
 
 
-def to_dtype_bitcast(x: TensorBox, dtype: torch.dtype, *, copy=False):
-    if x.get_dtype() == dtype:
-        return clone(x) if copy else x
-
-    def _get_primitive_bitwidth(dtype):
-        if dtype.is_floating_point:
-            return torch.finfo(dtype).bits
-        else:
-            return torch.iinfo(dtype).bits
-
-    src_bits = _get_primitive_bitwidth(x.get_dtype())
-    dst_bits = _get_primitive_bitwidth(dtype)
-    if src_bits != dst_bits:
-        raise NotImplementedError(
-            f"bitcast {x.get_dtype()} to different bitwidth type {dtype} is not supported yet."
-        )
-
-    def _to_dtype_bitcast(x):
-        return ops.to_dtype_bitcast(x, dtype)
-
-    return make_pointwise(_to_dtype_bitcast, override_return_dtype=dtype)(x)
-
-
 @register_lowering(aten.view.dtype, type_promotion_kind=None)
 def _view_dtype(x: TensorBox, dtype: torch.dtype):
-    return to_dtype_bitcast(x, dtype, copy=True)
+    view = ir.DtypeView.create(x, dtype)
+    if view is not None:
+        return view
+
+    return fallback_view_dtype(x, dtype)
 
 
 def to_device(x: TensorBox, device: torch.device, *, copy=False):
