@@ -210,6 +210,11 @@ def bmm(self, batch2):
 
 @register_decomposition([aten.mm])
 def mm(self, input2):
+    if input2.size(1) == 1:
+        return torch.mv(self, input2.squeeze(1)).unsqueeze(1)
+    if self.size(0) == 1:
+        return torch.mv(input2.T, self.squeeze(0)).unsqueeze(0)
+
     if self.device == "cpu":
         if (
             self.size(-1) == 1
