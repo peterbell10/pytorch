@@ -1369,7 +1369,7 @@ class WelfordReduction(Reduction):
 class Scan(Loops):
     scan_ranges: List[Expr]
     size: List[Expr]
-    scan_op: str  # TODO make this a callable
+    combine_fn: Callable  # TODO make this a callable
     reindex: Callable[[List[Expr], List[Expr]], List[Expr]]
     reduction_hint: ReductionHint
 
@@ -1417,7 +1417,7 @@ class Scan(Loops):
         inner_fn: Callable[[List[Expr]], Any],
         size: List[Expr],
         axis: int,
-        scan_op: str,
+        combine_fn: Callable,
         reduction_hint: ReductionHint = ReductionHint.DEFAULT,
     ) -> Optional["TensorBox"]:
         assert scan_op in {"sum", "prod"}
@@ -1451,7 +1451,7 @@ class Scan(Loops):
             axis=axis,
             pointwise_ranges=pointwise_ranges,
             scan_ranges=scan_ranges,
-            scan_op=scan_op,
+            combine_fn=combine_fn,
             scan_numel=scan_numel,
         )
         if num_splits > 1:
@@ -1471,7 +1471,7 @@ class Scan(Loops):
                 size=size,
                 ranges=pointwise_ranges,
                 scan_ranges=scan_ranges,
-                scan_op=scan_op,
+                combine_fn=combine_fn,
                 reindex=reindex,
                 reduction_hint=reduction_hint,
             )
@@ -1488,7 +1488,7 @@ class Scan(Loops):
         axis: int,
         pointwise_ranges: List[Expr],
         scan_ranges: List[Expr],
-        scan_op: str,
+        combine_fn: Callable,
         scan_numel: Expr,
     ):
         # TODO: custom splitting heuristic for scan
@@ -1502,7 +1502,7 @@ class Scan(Loops):
             inner_fn=wrapper_fn,
             ranges=pointwise_ranges,
             reduction_ranges=scan_ranges,
-            reduction_type=scan_op,
+            reduction_type="sum",
             reduction_numel=scan_numel,
         )
 
