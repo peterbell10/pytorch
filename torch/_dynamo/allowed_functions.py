@@ -20,6 +20,7 @@ except ModuleNotFoundError:
 import torch
 import torch._functorch.deprecated as deprecated_func
 from torch.fx._symbolic_trace import is_fx_tracing
+from torch.utils._getattr import _getattr_qual
 
 from . import config
 from .external_utils import is_compiling
@@ -305,23 +306,54 @@ def _builtin_constant_ids():
     }
     return rv
 
+_lazy_module_init: Dict[str, List[Callable[[], None]]] = defaultdict(list)
+
+def add_module_init_func(
+    name: str, init_func: Callable[[], None]
+) -> None:
+    """Register a module without eagerly importing it"""
+    # If the module is already imported, eagerly run init
+    if name in sys.modules:
+        init_func()
+
+    # Module is not yet imported, delay processing until needed
+    assert name not in _lazy_module_init
+    _lazy_module_init[name].append(init_func)
+
+def _maybe_init_lazy_module(obj: object) -> None:
+    init_funcs = _lazy_module_init.pop(obj.__module__, None)
+    if init_funcs is not None:
+        for fn in init_funcs:
+            fn()
+
 
 def is_allowed(obj):
     """Is this safe to trace like torch.add ?"""
-    # torch.ops is populated lazily so we don't necessarily have them in
-    # _allowed_function_ids.  Figure it out by testing the type instead
-    # in those cases
+    _maybe_init_lazy_module(obj)
+
     if id(obj) in _disallowed_function_ids:
         return False
 
-    return id(obj) in _allowed_function_ids or isinstance(
+    if id(obj) in _allowed_function_ids:
+        return True
+
+    # torch.ops is populated lazily so we don't necessarily have them in
+    # _allowed_function_ids.  Figure it out by testing the type instead
+    # in those cases
+    return isinstance(
         obj,
         (torch._ops.OpOverloadPacket, torch._ops.OpOverload, torch._ops._OpNamespace),
     )
 
 
 def is_user_defined_allowed(obj):
+    _maybe_init_lazy_module(obj)
     return id(obj) in _allowed_user_defined_function_ids
+
+
+def is_forbidden(obj):
+    _maybe_init_lazy_module(obj)
+    return getattr(obj, "_dynamo_forbidden", False)
 
 
 def torch_get_name(obj, default):
