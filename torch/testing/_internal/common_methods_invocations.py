@@ -16580,9 +16580,9 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.expectedFailure, "TestNormalizeOperators", "test_normalize_operator_exhaustive"),
                # AssertionError: JIT Test does not execute any logic
                DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
-               # Expected RuntimeError when doing an unsafe cast from a result of
-               # dtype torch.float32 into an out= with dtype torch.lon
-               DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out'),
+               # Expected RuntimeError when calling with input.device=cuda:0 and out.device=cpu.
+               DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out',
+                            active_if=torch.cuda.is_available()),
                # UserWarning not triggered : Resized a non-empty tensor but did not warn about it.
                DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out_warning'),
                DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'))),
@@ -16655,13 +16655,7 @@ op_db: List[OpInfo] = [
            dtypesIfCUDA=floating_types_and(torch.int8, torch.int16, torch.int32, torch.int64),
            sample_inputs_func=sample_inputs_histc,
            supports_out=True,
-           supports_autograd=False,
-           skips=(
-               # CUDA histc returns a float tensor but does not correctly warn when passed an integral out tensor
-               # "AssertionError: RuntimeError not raised : Expected RuntimeError when doing an unsafe cast
-               # from a result of dtype torch.float32 into an out= with dtype torch.long"
-               DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out', device_type='cuda'),
-           )),
+           supports_autograd=False),
     OpInfo('bincount',
            dtypes=integral_types_and(),
            sample_inputs_func=sample_inputs_bincount,
@@ -19445,6 +19439,10 @@ python_ref_db = [
         # Fails on int32
         # https://github.com/pytorch/pytorch/issues/85258
     ),
+    PythonRefInfo(
+        "_refs.full_like",
+        torch_opinfo_name="full_like",
+    ),
     ElementwiseUnaryPythonRefInfo(
         "_refs.frac",
         torch_opinfo_name="frac",
@@ -19591,6 +19589,39 @@ python_ref_db = [
     ElementwiseUnaryPythonRefInfo(
         "_refs.positive",
         torch_opinfo_name="positive",
+    ),
+    PythonRefInfo(
+        "_refs.rand_like",
+        torch_opinfo_name="rand_like",
+        op=lambda *args, **kwargs: wrapper_set_seed(refs.rand_like, *args, **kwargs),
+        is_factory_function=True,
+        supports_out=True,
+        skips=(
+            DecorateInfo(unittest.expectedFailure, "TestCommon", "test_python_ref"),
+            DecorateInfo(unittest.expectedFailure, "TestCommon", "test_python_ref_torch_fallback"),
+            DecorateInfo(unittest.expectedFailure, "TestCommon", "test_python_ref_executor"),
+        ),
+    ),
+    PythonRefInfo(
+        "_refs.randn_like",
+        torch_opinfo_name="randn_like",
+        op=lambda *args, **kwargs: wrapper_set_seed(refs.randn_like, *args, **kwargs),
+        is_factory_function=True,
+        supports_out=True,
+        skips=(
+            DecorateInfo(unittest.expectedFailure, "TestCommon", "test_python_ref_executor"),
+        ),
+    ),
+    PythonRefInfo(
+        "_refs.randint_like",
+        torch_opinfo_name="randint_like",
+        op=lambda *args, **kwargs: wrapper_set_seed(refs.randint_like, *args, **kwargs),
+        is_factory_function=True,
+        supports_out=True,
+        skips=(
+            DecorateInfo(unittest.expectedFailure, "TestCommon", "test_python_ref"),
+            DecorateInfo(unittest.expectedFailure, "TestCommon", "test_python_ref_executor"),
+        ),
     ),
     ElementwiseUnaryPythonRefInfo(
         "_refs.real",
