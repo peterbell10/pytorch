@@ -83,7 +83,6 @@ from .constant import ConstantVariable, EnumVariable
 from .ctx_manager import EventVariable, NullContextVariable, StreamVariable
 from .dicts import (
     ConstDictVariable,
-    DataClassVariable,
     DefaultDictVariable,
     HFPretrainedConfigVariable,
     PythonSysModulesVariable,
@@ -579,8 +578,8 @@ class VariableBuilder:
             )
         elif np and isinstance(value, np.number):
             return self.wrap_unspecialized_primitive(value)
-        elif DataClassVariable.is_matching_object(value):
-            return DataClassVariable.wrap(self, value).add_guards(
+        elif CustomizedDictVariable.is_matching_object(value):
+            return CustomizedDictVariable.wrap(self, value).add_guards(
                 make_guards(GuardBuilder.TYPE_MATCH)
             )
         elif HFPretrainedConfigVariable.is_matching_object(value):
@@ -1328,7 +1327,7 @@ class VariableBuilder:
 def _dataclasses_fields_lambda(obj):
     if isinstance(obj, UserDefinedObjectVariable):
         value = obj.value
-    elif isinstance(obj, DataClassVariable):
+    elif isinstance(obj, CustomizedDictVariable):
         value = obj.user_cls
     else:
         unimplemented(f"Dataclass fields handling fails for type {obj}")

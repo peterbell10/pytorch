@@ -1178,7 +1178,6 @@ class BuiltinVariable(VariableTracker):
         if isinstance(
             obj,
             (
-                variables.DataClassVariable,
                 variables.CustomizedDictVariable,
                 PlacementVariable,
             ),

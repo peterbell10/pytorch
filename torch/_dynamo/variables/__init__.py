@@ -14,7 +14,6 @@ from .ctx_manager import (
 from .dicts import (
     ConstDictVariable,
     CustomizedDictVariable,
-    DataClassVariable,
     DefaultDictVariable,
     SetVariable,
 )
@@ -69,7 +68,6 @@ __all__ = [
     "ConstantVariable",
     "ConstDictVariable",
     "ContextWrappingVariable",
-    "DataClassVariable",
     "CustomizedDictVariable",
     "DefaultDictVariable",
     "DeletedVariable",
