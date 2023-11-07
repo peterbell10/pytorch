@@ -50,7 +50,10 @@ from torch.testing._internal.common_cuda import (
     with_tf32_off,
 )
 
-from torch.testing._internal.common_device_type import _has_sufficient_memory
+from torch.testing._internal.common_device_type import (
+    _has_sufficient_memory,
+    largeTensorTest,
+)
 from torch.testing._internal.common_dtype import all_types
 from torch.testing._internal.common_utils import (
     DeterministicGuard,
@@ -7476,6 +7479,7 @@ class CommonTemplate:
     @config.patch(
         "triton.autotune_pointwise", True
     )  # needed to introduce config that exceed max shared memory usage
+    @largeTensorTest(3 * 2**24 * 64 * 4)
     def test_large_block_sizes(self):
         """
         Inductor will try triton configs like x = 64 and y = 1024 which will
@@ -7491,11 +7495,8 @@ class CommonTemplate:
 
         # Use shape (2**24, 65) rather than (2**24, 128) potentially avoid OOM in
         # CI while still keep the same up-rounded size-hints.
-        try:
-            a = torch.randn(2**24, 65, device=self.device)
-            b = torch.randn(65, 2**24, device=self.device)
-        except RuntimeError:
-            return  # skip testing if OOM
+        a = torch.randn(2**24, 65, device=self.device)
+        b = torch.randn(65, 2**24, device=self.device)
         fn(a, b)
 
 
