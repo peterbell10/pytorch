@@ -1,5 +1,4 @@
 #define TORCH_ASSERT_NO_OPERATORS
-#include <ATen/Context.h>
 #include <ATen/Dispatch.h>
 #include <ATen/native/cuda/Loops.cuh>
 #include <ATen/native/cuda/JitLoops.cuh>

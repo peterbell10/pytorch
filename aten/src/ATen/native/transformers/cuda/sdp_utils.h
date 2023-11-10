@@ -1,6 +1,5 @@
 #pragma once
 
-#include <ATen/Context.h>
 #include <ATen/native/transformers/sdp_utils_cpp.h>
 
 namespace sdp {

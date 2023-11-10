@@ -8,7 +8,6 @@
 #include <cusolver_common.h>
 #endif
 
-#include <ATen/Context.h>
 #include <c10/util/Exception.h>
 #include <c10/cuda/CUDAException.h>
 
