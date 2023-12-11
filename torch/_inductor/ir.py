@@ -1600,10 +1600,6 @@ class Scan(Loops):
         pointwise_ranges = [*size[:axis], *size[axis + 1 :]]
         scan_ranges = [size[axis]]
 
-        if device.type != "cuda":
-            # TODO: CPU support
-            return None
-
         if torch.version.hip is not None:
             # TODO: ROCm support
             return None
@@ -1763,13 +1759,15 @@ class Scan(Loops):
             device=device,
             dtype=intermediate_dtype,
             inner_fn=lambda idx: wrapper_fn(idx[:-1], idx[-1:]),
-            size=[*size[:axis], split, block_size, *size[axis + 1:]],
+            size=[*size[:axis], split, block_size, *size[axis + 1 :]],
             axis=axis + 1,
             scan_op=scan_op,
         )
 
         # Scan across the total of all blocks
-        block_reduce = SliceView.create(block_scan, dim=axis + 1, start=block_size - 1, end=block_size)
+        block_reduce = SliceView.create(
+            block_scan, dim=axis + 1, start=block_size - 1, end=block_size
+        )
         intra_block_scan = Scan.create(
             device=device,
             dtype=intermediate_dtype,
@@ -1787,7 +1785,7 @@ class Scan(Loops):
         def final_combine_fn(idx):
             elem_idx = ModularIndexing(idx[axis], 1, block_size)
             block_idx = FloorDiv(idx[axis], block_size)
-            blocked_idx = [*idx[:axis], block_idx, elem_idx, *idx[axis + 1:]]
+            blocked_idx = [*idx[:axis], block_idx, elem_idx, *idx[axis + 1 :]]
 
             a = block_scan_loader(blocked_idx)
 
@@ -1799,8 +1797,7 @@ class Scan(Loops):
                 return intra_block_scan_loader(iv_idx)
 
             mask = ops.ge(
-                ops.index_expr(block_idx, torch.int64),
-                ops.constant(1, torch.int64)
+                ops.index_expr(block_idx, torch.int64), ops.constant(1, torch.int64)
             )
             b = ops.masked(mask, load_iv, default)
             result = combine_fn(a, b)
