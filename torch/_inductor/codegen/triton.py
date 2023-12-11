@@ -2670,19 +2670,10 @@ class TritonScheduling(BaseScheduling):
 
         # Get buffers objects
         def _get_buffer(name: str) -> Union[ir.Buffer, ir.TensorBox]:
-            if name in V.graph.name_to_buffer:
-                return V.graph.name_to_buffer[name]
-            elif name in V.graph.graph_inputs:
-                return V.graph.graph_inputs[name]
-            elif name in V.graph.constants:
-                data = V.graph.constants[name]
-                return ir.ConstantBuffer(
-                    name,
-                    ir.FixedLayout(
-                        data.device, data.dtype, *V.graph.static_sizes_strides(data)
-                    ),
-                )
-            raise RuntimeError(f"Failed to find buffer matching name {name}")
+            buffer = V.graph.get_buffer(name)
+            if buffer is None:
+                raise RuntimeError(f"Failed to find buffer matching name {name}")
+            return buffer
 
         buffers = [_get_buffer(name) for name in buffer_names]
 
