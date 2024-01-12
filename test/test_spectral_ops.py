@@ -464,6 +464,22 @@ class TestFFT(TestCase):
 
     @skipCPUIfNoFFT
     @onlyNativeDeviceTypes
+    @dtypes(torch.half, torch.float, torch.double)
+    def test_fftn_noop_transform(self, device, dtype):
+
+        for op in [
+            torch.fft.fftn,
+            torch.fft.ifftn,
+            torch.fft.fft2,
+            torch.fft.ifft2,
+        ]:
+            inp = make_tensor((10, 10), device=device, dtype=dtype)
+            out = torch.fft.fftn(inp, dim=[])
+            self.assertEqual(inp, out)
+
+
+    @skipCPUIfNoFFT
+    @onlyNativeDeviceTypes
     @toleranceOverride({
         torch.half : tol(1e-2, 1e-2),
     })
