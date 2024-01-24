@@ -1,4 +1,5 @@
 # Owner(s): ["module: dynamo"]
+import copy
 import logging
 import re
 import shutil
@@ -78,7 +79,8 @@ class ReplayRecordTests(torch._dynamo.test_case.TestCase):
     def test_unsuccessful_inline(self):
         def level2():
             z = torch.ones(2, 2)
-            a = {z: 10}  # Error here, tensor as key to dict
+            a = {z: 10}
+            a = copy.deepcopy(a)  # Error here, deepcopy unsupported
             return a[z] * torch.ones(1)
 
         def level1():
@@ -177,6 +179,16 @@ class ReplayRecordTests(torch._dynamo.test_case.TestCase):
         self.check_replay(
             test_fn, torch.ones(3, 3), torch.ones(2, 2), exp_exc_name="RuntimeError"
         )
+
+    # Verify that accessing torch.nn works when frame replaying is enabled
+    @skipIfNoDill
+    def test_torch_nn(self):
+        def fn(x):
+            y = torch.nn.functional.pad(x, (10, 10, 10, 10))
+            return y + torch.ones(3, 3)  # dimension mismatch
+
+        x = torch.ones(4, 4, 4, 4)
+        self.check_replay(fn, x, exp_exc_name="RuntimeError")
 
 
 if __name__ == "__main__":
