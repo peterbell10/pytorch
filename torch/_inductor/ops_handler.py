@@ -208,9 +208,7 @@ class OpsHandler(Protocol[T]):
         """
         ...
 
-    def scan(
-        self, dtype: torch.dtype, combine_fn: Callable[[T, T], T], value: T, init: int
-    ) -> T:
+    def scan(self, dtype: torch.dtype, combine_fn: Callable[[T, T], T], value: T) -> T:
         """
         Perform an associative scan on 'value'.
         """
