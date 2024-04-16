@@ -104,11 +104,40 @@ def max_with_index(value, index, dim):
 
 
 @triton.jit
+def welford_reduce_asm(value, mean, m2, weight):
+    return tl.inline_asm_elementwise(
+        """
+        {
+            .reg .f32 f<4>;
+            sub.f32 f0, $3, $4;
+
+            add.f32 $0, $6, 1.0;
+
+            div.full.f32 f1, f0, $0;
+            add.f32 $1, $4, f1;
+
+            sub.f32 f2, $3, $1;
+            fma.rn.f32 $2, f2, f0, $5;
+        }
+        """,
+        constraints="=r,=r,=r,r,r,r,r",
+        args=[value, mean, m2, weight],
+        dtype=(tl.float32, tl.float32, tl.float32),
+        is_pure=True,
+        pack=1,
+    )
+
+
+@triton.jit
 def welford_reduce(value, mean, m2, weight, first_iteration):
     if first_iteration:
         new_weight = tl.full(weight.shape, 1, weight.dtype)
         new_mean = value
         new_m2 = tl.zeros_like(m2)
+    elif value.dtype == tl.float32:
+        new_mean, new_m2, new_weight = welford_reduce_asm(
+            value, mean, m2, weight
+        )
     else:
         delta = value - mean
         new_weight = weight + 1
