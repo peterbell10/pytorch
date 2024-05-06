@@ -2066,6 +2066,16 @@ def _fused_dropout_decomposition(input, p, generator=None):
     return (res, mask)
 
 
+@register_decomposition(aten._masked_scale.default)
+def _masked_scale_decomposition(grad, mask, scale):
+    # Used in _fused_dropout_backward
+    comp_dtype = utils.get_computation_dtype(grad.dtype)
+    grad_c = _maybe_convert_to_dtype(grad, comp_dtype)
+    mask_c = _maybe_convert_to_dtype(mask, comp_dtype)
+    res = (scale * grad_c) * mask_c
+    return _maybe_convert_to_dtype(res, grad.dtype)
+
+
 @register_decomposition(aten._to_copy)
 @out_wrapper()
 def _to_copy(
