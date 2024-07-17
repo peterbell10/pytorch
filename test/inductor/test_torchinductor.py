@@ -1909,6 +1909,35 @@ class CommonTemplate:
         actual = associative_scan(argmax_combine, (a, idx), 0)
         self.assertEqual(expect, actual)
 
+    def test_custom_scan_would_split(self):
+        def combine_gating(left, right):
+             X, G = left
+             x, g = right
+             return (1 - g) * X + g * x, g
+
+        def eager_gating(x, g):
+            x_out = torch.empty_like(x)
+            g_out = torch.empty_like(g_out)
+            x_out[:, 0] = x[:, 0]
+            g_out[:, 0] = g[:, 0]
+            for i in range(x.shape[1]):
+                x[:, i], g[:, i] = combine_gating(
+                    (x_out[:, i - 1], g_out[:, i - 1]),
+                    (x[:, i], g_out[:, i]),
+                )
+            return x_out, g_out
+
+        @torch.compile
+        def compiled_gating(x, g):
+            x, g = associative_scan(combine_gating, (x, g), dim=1)
+            return x, g
+
+        x = torch.randn(1, 129, 2, device=self.device)
+        g = torch.randn(1, 129, 2, device=self.device)
+        expect = eager_gating(x, g)
+        actual = compiled_gating(x, g)
+        self.assertEqual(expect, actual)
+
     def test_embedding_bag_byte_unpack(self):
         if self.device != "cpu":
             raise unittest.SkipTest(f"No {GPU_TYPE} implementation (it returns empty)")
